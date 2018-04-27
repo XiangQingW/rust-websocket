@@ -820,6 +820,7 @@ impl<'u> ClientBuilder<'u> {
 			}
 		};
 
+		debug!("connect websocket address: {:?}", address);
 		// connect a tcp stream
 		Ok(async::TcpStream::connect(&address, handle))
 	}

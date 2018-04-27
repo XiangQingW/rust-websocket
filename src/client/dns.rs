@@ -23,9 +23,6 @@ pub fn try_remove_custom_addr(domain: &str) -> Option<SocketAddr> {
     match CUSTOM_DOMAIN2ADDR.write() {
         Ok(mut addrs) => {
             let addr = addrs.remove(domain);
-            if addr.is_some() {
-                debug!("get custom addr: domain= {:?} addr= {:?}", domain, addr);
-            }
             addr
         },
         _ => None,
