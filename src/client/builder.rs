@@ -866,6 +866,26 @@ impl<'u> ClientBuilder<'u> {
 		let status = StatusCode::from_u16(response.subject.0);
 
 		if status != StatusCode::SwitchingProtocols {
+			let get_header_value = |header_name: &'static str| {
+				match response.headers.get_raw(header_name) {
+					Some(code) => {
+						let empty_code = vec![];
+						let code = String::from_utf8_lossy(code.first().unwrap_or(&empty_code));
+						code.parse().unwrap_or(0)
+					},
+					None => 0,
+				}
+			};
+
+			const AUTH_ERROR_STATUS: u32 = 514;
+			let auth_status = get_header_value("Handshake-Status");
+			let is_auth_failed = auth_status == AUTH_ERROR_STATUS;
+
+			if is_auth_failed {
+				let auth_resp_code = get_header_value("Handshake-Msg");
+				return Err(WebSocketError::AuthError(auth_resp_code));
+			}
+
 			return Err(WebSocketError::ResponseError("Status code must be Switching Protocols"));
 		}
 
