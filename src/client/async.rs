@@ -55,7 +55,7 @@ use codec::ws::MessageCodec;
 use message::OwnedMessage;
 
 #[cfg(feature="async-ssl")]
-pub use tokio_tls::TlsStream;
+pub use tokio_rustls::TlsStream;
 
 /// An asynchronous websocket client.
 ///
