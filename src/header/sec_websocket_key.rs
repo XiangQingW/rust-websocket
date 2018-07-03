@@ -1,5 +1,6 @@
 use std::mem;
 use std::str::FromStr;
+#[cfg(feature = "nightly")]
 use std::convert::TryFrom;
 
 use base64;
@@ -63,6 +64,7 @@ impl From<WebSocketKey> for HeaderValue {
 	}
 }
 
+#[cfg(feature = "nightly")]
 impl TryFrom<HeaderValue> for WebSocketKey {
 	type Error = ();
 	fn try_from(value: HeaderValue) -> Result<WebSocketKey, ()> {
