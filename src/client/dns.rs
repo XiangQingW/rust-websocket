@@ -22,13 +22,20 @@ pub fn set_custom_addr(domain: String, addr: &str) {
     }
 }
 
-/// remove custom addr-ip setting
-pub fn try_remove_custom_addr(domain: &str) -> Option<SocketAddr> {
+/// get custom addr-ip setting
+pub fn try_get_custom_addr(domain: &str) -> Option<SocketAddr> {
     match CUSTOM_DOMAIN2ADDR.write() {
-        Ok(mut addrs) => {
-            let addr = addrs.remove(domain);
+        Ok(addrs) => {
+            let addr = addrs.get(domain).cloned();
             addr
         },
         _ => None,
+    }
+}
+
+/// remove custom addr-ip setting
+pub fn remove_custom_addr(domain: &str) {
+    if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
+        addrs.remove(domain);
     }
 }

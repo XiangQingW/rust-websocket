@@ -804,7 +804,7 @@ impl<'u> ClientBuilder<'u> {
                 handle: &Handle,
         ) -> WebSocketResult<TcpStreamNew> {
                 // get the address to connect to, return an error future if ther's a problem
-                let address = match super::dns::try_remove_custom_addr(self.url.host_str().unwrap_or("")) {
+                let address = match super::dns::try_get_custom_addr(self.url.host_str().unwrap_or("")) {
                         Some(addr) => addr,
                         None => {
                                 match self.extract_host_port(secure).and_then(|p| Ok(p.to_socket_addrs()?)) {
