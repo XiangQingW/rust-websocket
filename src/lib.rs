@@ -1,6 +1,5 @@
 #![warn(missing_docs)]
 #![cfg_attr(all(test, feature = "nightly"), feature(test))]
-
 #![deny(unused_mut)]
 
 //! Rust-WebSocket is a WebSocket (RFC6455) library written in Rust.
@@ -28,29 +27,29 @@
 //! # Extending Rust-WebSocket
 //! The `ws` module contains the traits and functions used by Rust-WebSockt at a lower
 //! level. Their usage is explained in the module documentation.
+extern crate base64;
+extern crate byteorder;
+#[cfg(feature = "async")]
+extern crate bytes;
 extern crate hyper;
+extern crate rand;
+#[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]
+extern crate rustls;
+extern crate sha1;
+#[cfg(feature = "async")]
+extern crate tokio_core;
+#[cfg(feature = "async")]
+extern crate tokio_io;
 extern crate unicase;
 pub extern crate url;
-extern crate rand;
-extern crate byteorder;
-extern crate sha1;
-extern crate base64;
-#[cfg(any(feature="sync-ssl", feature="async-ssl"))]
-extern crate rustls;
-#[cfg(feature="async")]
-extern crate tokio_core;
-#[cfg(feature="async")]
-extern crate tokio_io;
-#[cfg(feature="async")]
-extern crate bytes;
-#[cfg(feature="async")]
+#[cfg(feature = "async")]
 #[macro_use]
 pub extern crate futures;
-#[cfg(feature="async-ssl")]
+#[cfg(feature = "async-ssl")]
 extern crate tokio_rustls;
-#[cfg(feature="async-ssl")]
+#[cfg(feature = "async-ssl")]
 extern crate webpki;
-#[cfg(feature="async-ssl")]
+#[cfg(feature = "async-ssl")]
 extern crate webpki_roots;
 #[macro_use]
 extern crate lazy_static;
@@ -64,10 +63,7 @@ extern crate bitflags;
 extern crate test;
 
 macro_rules! upsert_header {
-    ($headers:expr; $header:ty; {
-        Some($pat:pat) => $some_match:expr,
-        None => $default:expr
-    }) => {{
+    ($headers:expr; $header:ty;  { Some($pat:pat) => $some_match:expr,None => $default:expr }) => {{
         if $headers.has::<$header>() {
             if let Some($pat) = $headers.get_mut::<$header>() {
                 $some_match
@@ -75,16 +71,16 @@ macro_rules! upsert_header {
         } else {
             $headers.set($default);
         }
-    }}
+    }};
 }
 
-pub mod ws;
 pub mod dataframe;
+pub mod header;
 pub mod message;
 pub mod result;
-pub mod header;
+pub mod ws;
 
-#[cfg(feature="async")]
+#[cfg(feature = "async")]
 pub mod codec;
 
 // #[cfg(feature="sync")]
@@ -126,46 +122,46 @@ pub mod stream;
 // }
 
 /// A collection of handy asynchronous-only parts of the crate.
-#[cfg(feature="async")]
+#[cfg(feature = "async")]
 pub mod async {
-        pub use codec;
-        pub use codec::ws::MessageCodec;
-        pub use codec::ws::Context as MsgCodecCtx;
-        pub use codec::http::HttpClientCodec;
-        pub use codec::http::HttpServerCodec;
+    pub use codec;
+    pub use codec::http::HttpClientCodec;
+    pub use codec::http::HttpServerCodec;
+    pub use codec::ws::Context as MsgCodecCtx;
+    pub use codec::ws::MessageCodec;
 
-        pub use stream::async::Stream;
-        pub use stream::async as stream;
+    pub use stream::async as stream;
+    pub use stream::async::Stream;
 
-        /// A collection of handy asynchronous-only parts of the `server` module.
-        // pub mod server {
-        //         pub use server::async::*;
-        //         pub use server::upgrade::async::Upgrade;
-        //         pub use server::upgrade::async::IntoWs;
-        //         pub use server::upgrade::async as upgrade;
-        // }
-        // pub use server::async::Server;
+    /// A collection of handy asynchronous-only parts of the `server` module.
+    // pub mod server {
+    //         pub use server::async::*;
+    //         pub use server::upgrade::async::Upgrade;
+    //         pub use server::upgrade::async::IntoWs;
+    //         pub use server::upgrade::async as upgrade;
+    // }
+    // pub use server::async::Server;
 
-        /// A collection of handy asynchronous-only parts of the `client` module.
-        pub mod client {
-                pub use client::async::*;
-                pub use client::builder::ClientBuilder;
-        }
-        pub use client::async::Client;
+    /// A collection of handy asynchronous-only parts of the `client` module.
+    pub mod client {
+        pub use client::async::*;
+        pub use client::builder::ClientBuilder;
+    }
+    pub use client::async::Client;
 
-        pub use result::async::WebSocketFuture;
+    pub use result::async::WebSocketFuture;
 
-        pub use futures;
-        pub use tokio_core::net::TcpStream;
-        pub use tokio_core::net::TcpListener;
-        pub use tokio_core::reactor::Core;
-        pub use tokio_core::reactor::Handle;
+    pub use futures;
+    pub use tokio_core::net::TcpListener;
+    pub use tokio_core::net::TcpStream;
+    pub use tokio_core::reactor::Core;
+    pub use tokio_core::reactor::Handle;
 }
 
-pub use self::message::Message;
-pub use self::message::CloseData;
-pub use self::message::OwnedMessage;
 pub use self::client::builder::ClientBuilder;
+pub use self::message::CloseData;
+pub use self::message::Message;
+pub use self::message::OwnedMessage;
 
 pub use self::result::WebSocketError;
 pub use self::result::WebSocketResult;

@@ -1,27 +1,27 @@
-extern crate websocket;
 extern crate futures;
 extern crate tokio_core;
+extern crate websocket;
 
 use std::fmt::Debug;
 
+use websocket::async::Server;
 use websocket::message::{Message, OwnedMessage};
 use websocket::server::InvalidConnection;
-use websocket::async::Server;
 
-use tokio_core::reactor::{Handle, Core};
 use futures::{Future, Sink, Stream};
+use tokio_core::reactor::{Core, Handle};
 
 fn main() {
-	let mut core = Core::new().unwrap();
-	let handle = core.handle();
-	// bind to the server
-	let server = Server::bind("127.0.0.1:2794", &handle).unwrap();
+    let mut core = Core::new().unwrap();
+    let handle = core.handle();
+    // bind to the server
+    let server = Server::bind("127.0.0.1:2794", &handle).unwrap();
 
-	// time to build the server's future
-	// this will be a struct containing everything the server is going to do
+    // time to build the server's future
+    // this will be a struct containing everything the server is going to do
 
-	// a stream of incoming connections
-	let f = server.incoming()
+    // a stream of incoming connections
+    let f = server.incoming()
         // we don't wanna save the stream if it drops
         .map_err(|InvalidConnection { error, .. }| error)
         .for_each(|(upgrade, addr)| {
@@ -62,13 +62,16 @@ fn main() {
             Ok(())
         });
 
-	core.run(f).unwrap();
+    core.run(f).unwrap();
 }
 
 fn spawn_future<F, I, E>(f: F, desc: &'static str, handle: &Handle)
-	where F: Future<Item = I, Error = E> + 'static,
-	      E: Debug
+where
+    F: Future<Item = I, Error = E> + 'static,
+    E: Debug,
 {
-	handle.spawn(f.map_err(move |e| println!("{}: '{:?}'", desc, e))
-	              .map(move |_| println!("{}: Finished.", desc)));
+    handle.spawn(
+        f.map_err(move |e| println!("{}: '{:?}'", desc, e))
+            .map(move |_| println!("{}: Finished.", desc)),
+    );
 }

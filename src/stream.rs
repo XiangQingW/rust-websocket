@@ -1,96 +1,109 @@
 //! Provides the default stream type for WebSocket connections.
 
-use std::io::{self, Read, Write};
 use std::fmt::Arguments;
+use std::io::{self, Read, Write};
 
 /// Represents a stream that can be read from, and written to.
 /// This is an abstraction around readable and writable things to be able
 /// to speak websockets over ssl, tcp, unix sockets, etc.
 pub trait Stream: Read + Write {}
-impl<S> Stream for S where S: Read + Write {}
+impl<S> Stream for S
+where
+    S: Read + Write,
+{
+}
 
 /// If you would like to combine an input stream and an output stream into a single
 /// stream to talk websockets over then this is the struct for you!
 ///
 /// This is useful if you want to use different mediums for different directions.
 pub struct ReadWritePair<R, W>(pub R, pub W)
-        where R: Read,
-              W: Write;
+where
+    R: Read,
+    W: Write;
 
 impl<R, W> Read for ReadWritePair<R, W>
-        where R: Read,
-              W: Write
+where
+    R: Read,
+    W: Write,
 {
-        #[inline(always)]
-        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-                self.0.read(buf)
-        }
-        #[inline(always)]
-        fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
-                self.0.read_to_end(buf)
-        }
-        #[inline(always)]
-        fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
-                self.0.read_to_string(buf)
-        }
-        #[inline(always)]
-        fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-                self.0.read_exact(buf)
-        }
+    #[inline(always)]
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read(buf)
+    }
+    #[inline(always)]
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        self.0.read_to_end(buf)
+    }
+    #[inline(always)]
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        self.0.read_to_string(buf)
+    }
+    #[inline(always)]
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        self.0.read_exact(buf)
+    }
 }
 
 impl<R, W> Write for ReadWritePair<R, W>
-        where R: Read,
-              W: Write
+where
+    R: Read,
+    W: Write,
 {
-        #[inline(always)]
-        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                self.1.write(buf)
-        }
-        #[inline(always)]
-        fn flush(&mut self) -> io::Result<()> {
-                self.1.flush()
-        }
-        #[inline(always)]
-        fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-                self.1.write_all(buf)
-        }
-        #[inline(always)]
-        fn write_fmt(&mut self, fmt: Arguments) -> io::Result<()> {
-                self.1.write_fmt(fmt)
-        }
+    #[inline(always)]
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.1.write(buf)
+    }
+    #[inline(always)]
+    fn flush(&mut self) -> io::Result<()> {
+        self.1.flush()
+    }
+    #[inline(always)]
+    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
+        self.1.write_all(buf)
+    }
+    #[inline(always)]
+    fn write_fmt(&mut self, fmt: Arguments) -> io::Result<()> {
+        self.1.write_fmt(fmt)
+    }
 }
 
 /// A collection of traits and implementations for async streams.
-#[cfg(feature="async")]
+#[cfg(feature = "async")]
 pub mod async {
-        use std::io::{self, Read, Write};
-        use futures::Poll;
-        pub use super::ReadWritePair;
-        pub use tokio_core::net::TcpStream;
-        pub use tokio_io::{AsyncWrite, AsyncRead};
-        pub use tokio_io::io::{ReadHalf, WriteHalf};
+    pub use super::ReadWritePair;
+    use futures::Poll;
+    use std::io::{self, Read, Write};
+    pub use tokio_core::net::TcpStream;
+    pub use tokio_io::io::{ReadHalf, WriteHalf};
+    pub use tokio_io::{AsyncRead, AsyncWrite};
 
-        /// A stream that can be read from and written to asynchronously.
-        /// This let's us abstract over many async streams like tcp, ssl,
-        /// udp, ssh, etc.
-        pub trait Stream: AsyncRead + AsyncWrite {}
-        impl<S> Stream for S where S: AsyncRead + AsyncWrite {}
+    /// A stream that can be read from and written to asynchronously.
+    /// This let's us abstract over many async streams like tcp, ssl,
+    /// udp, ssh, etc.
+    pub trait Stream: AsyncRead + AsyncWrite {}
+    impl<S> Stream for S
+    where
+        S: AsyncRead + AsyncWrite,
+    {
+    }
 
-        impl<R, W> AsyncRead for ReadWritePair<R, W>
-                where R: AsyncRead,
-                      W: Write
-        {
+    impl<R, W> AsyncRead for ReadWritePair<R, W>
+    where
+        R: AsyncRead,
+        W: Write,
+    {
+    }
+
+    impl<R, W> AsyncWrite for ReadWritePair<R, W>
+    where
+        W: AsyncWrite,
+        R: Read,
+    {
+        fn shutdown(&mut self) -> Poll<(), io::Error> {
+            self.1.shutdown()
         }
-
-        impl<R, W> AsyncWrite for ReadWritePair<R, W>
-                where W: AsyncWrite,
-                      R: Read
-        {
-                fn shutdown(&mut self) -> Poll<(), io::Error> {
-                        self.1.shutdown()
-                }
-        }
+    }
 }
 
 // A collection of traits and implementations for synchronous streams.

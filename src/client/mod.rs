@@ -15,9 +15,9 @@
 
 pub mod builder;
 pub mod dns;
-pub use self::builder::{ClientBuilder, Url, ParseError};
+pub use self::builder::{ClientBuilder, ParseError, Url};
 
-#[cfg(feature="async")]
+#[cfg(feature = "async")]
 pub mod async;
 
 // #[cfg(feature="sync")]

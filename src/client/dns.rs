@@ -1,7 +1,7 @@
 //! Custom ip address setting
 
-use std::net::{Ipv4Addr, SocketAddrV4, SocketAddr};
 use std::collections::HashMap;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::RwLock;
 
 lazy_static! {
@@ -28,7 +28,7 @@ pub fn try_get_custom_addr(domain: &str) -> Option<SocketAddr> {
         Ok(addrs) => {
             let addr = addrs.get(domain).cloned();
             addr
-        },
+        }
         _ => None,
     }
 }

@@ -1,25 +1,25 @@
-extern crate websocket;
 extern crate futures;
 extern crate tokio_core;
+extern crate websocket;
 
+use websocket::async::Server;
 use websocket::message::OwnedMessage;
 use websocket::server::InvalidConnection;
-use websocket::async::Server;
 
-use tokio_core::reactor::Core;
 use futures::{Future, Sink, Stream};
+use tokio_core::reactor::Core;
 
 fn main() {
-	let mut core = Core::new().unwrap();
-	let handle = core.handle();
-	// bind to the server
-	let server = Server::bind("127.0.0.1:9002", &handle).unwrap();
+    let mut core = Core::new().unwrap();
+    let handle = core.handle();
+    // bind to the server
+    let server = Server::bind("127.0.0.1:9002", &handle).unwrap();
 
-	// time to build the server's future
-	// this will be a struct containing everything the server is going to do
+    // time to build the server's future
+    // this will be a struct containing everything the server is going to do
 
-	// a stream of incoming connections
-	let f = server.incoming()
+    // a stream of incoming connections
+    let f = server.incoming()
         // we don't wanna save the stream if it drops
         .map_err(|InvalidConnection { error, .. }| error)
         .for_each(|(upgrade, addr)| {
@@ -50,5 +50,5 @@ fn main() {
             Ok(())
         });
 
-	core.run(f).unwrap();
+    core.run(f).unwrap();
 }
