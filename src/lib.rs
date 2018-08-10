@@ -44,6 +44,7 @@ extern crate tokio_io;
 #[cfg(feature="async")]
 extern crate bytes;
 #[cfg(feature="async")]
+#[macro_use]
 pub extern crate futures;
 #[cfg(feature="async-ssl")]
 extern crate tokio_rustls;
