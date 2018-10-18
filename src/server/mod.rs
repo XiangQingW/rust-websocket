@@ -1,6 +1,11 @@
 //! Provides an implementation of a WebSocket server
-#[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]
+#[cfg(any(feature = "sync-ssl"))]
 use native_tls::TlsAcceptor;
+
+#[cfg(feature = "async-ssl")]
+mod async_imports {
+	pub use tokio_tls::TlsAcceptor;
+}
 
 use codec::http::RequestHead;
 use stream::Stream;
@@ -23,8 +28,11 @@ pub struct NoTlsAcceptor;
 /// is running over SSL or not.
 pub trait OptionalTlsAcceptor {}
 impl OptionalTlsAcceptor for NoTlsAcceptor {}
-#[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]
+#[cfg(any(feature = "sync-ssl"))]
 impl OptionalTlsAcceptor for TlsAcceptor {}
+
+#[cfg(any(feature = "async-ssl"))]
+impl OptionalTlsAcceptor for async_imports::TlsAcceptor {}
 
 /// When a sever tries to accept a connection many things can go wrong.
 ///

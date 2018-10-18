@@ -11,9 +11,9 @@ use bytes::BytesMut;
 pub use tokio::reactor::Handle;
 
 #[cfg(any(feature = "async-ssl"))]
-use native_tls::TlsAcceptor;
+use tokio_tls::TlsAcceptor;
 #[cfg(any(feature = "async-ssl"))]
-use tokio_tls::{TlsAcceptorExt, TlsStream};
+use tokio_tls::TlsStream;
 
 /// The asynchronous specialization of a websocket server.
 /// Use this struct to create asynchronous servers.
@@ -128,7 +128,7 @@ impl WsServer<TlsAcceptor, TcpListener> {
 		})
 		                 .and_then(move |stream| {
 			let a = stream.local_addr().unwrap();
-			acceptor.accept_async(stream)
+			acceptor.accept(stream)
 			        .map_err(|e| {
 				InvalidConnection {
 					stream: None,

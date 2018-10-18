@@ -44,7 +44,7 @@ use super::sync::Client;
 #[cfg(feature = "sync-ssl")]
 use stream::sync::NetworkStream;
 
-#[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]
+#[cfg(any(feature = "sync-ssl"))]
 use native_tls::TlsConnector;
 #[cfg(feature = "sync-ssl")]
 use native_tls::TlsStream;
@@ -61,7 +61,7 @@ mod async_imports {
 	pub use futures::Stream as FutureStream;
 	pub use codec::ws::{MessageCodec, Context};
 	#[cfg(feature = "async-ssl")]
-	pub use tokio_tls::TlsConnectorExt;
+	pub use tokio_tls::TlsConnector;
 }
 #[cfg(feature = "async")]
 use self::async_imports::*;
@@ -567,7 +567,7 @@ impl<'u> ClientBuilder<'u> {
 	#[cfg(feature = "async-ssl")]
 	pub fn async_connect(
 		self,
-		ssl_config: Option<TlsConnector>,
+		ssl_config: Option<async_imports::TlsConnector>,
 		handle: &Handle,
 	) -> async::ClientNew<Box<stream::async::Stream + Send>> {
 		// connect to the tcp stream
@@ -588,7 +588,7 @@ impl<'u> ClientBuilder<'u> {
 		if builder.url.scheme() == "wss" {
 			// configure the tls connection
 			let (host, connector) = {
-				match builder.extract_host_ssl_conn(ssl_config) {
+				match builder.extract_host_ssl_conn_async(ssl_config) {
 					Ok((h, conn)) => (h.to_string(), conn),
 					Err(e) => return Box::new(future::err(e)),
 				}
@@ -596,7 +596,7 @@ impl<'u> ClientBuilder<'u> {
 			// secure connection, wrap with ssl
 			let future = tcp_stream.map_err(|e| e.into())
 			                       .and_then(move |s| {
-				connector.connect_async(&host, s).map_err(|e| e.into())
+				connector.connect(&host, s).map_err(|e| e.into())
 			})
 			                       .and_then(move |stream| {
 				let stream: Box<stream::async::Stream + Send> = Box::new(stream);
@@ -649,7 +649,7 @@ impl<'u> ClientBuilder<'u> {
 	#[cfg(feature = "async-ssl")]
 	pub fn async_connect_secure(
 		self,
-		ssl_config: Option<TlsConnector>,
+		ssl_config: Option<async_imports::TlsConnector>,
 		handle: &Handle,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream>> {
 		// connect to the tcp stream
@@ -660,7 +660,7 @@ impl<'u> ClientBuilder<'u> {
 
 		// configure the tls connection
 		let (host, connector) = {
-			match self.extract_host_ssl_conn(ssl_config) {
+			match self.extract_host_ssl_conn_async(ssl_config) {
 				Ok((h, conn)) => (h.to_string(), conn),
 				Err(e) => return Box::new(future::err(e)),
 			}
@@ -677,7 +677,7 @@ impl<'u> ClientBuilder<'u> {
 		// put it all together
 		let future = tcp_stream.map_err(|e| e.into())
 		                       .and_then(move |s| {
-			connector.connect_async(&host, s).map_err(|e| e.into())
+			connector.connect(&host, s).map_err(|e| e.into())
 		})
 		                       .and_then(move |stream| builder.async_connect_on(stream));
 		Box::new(future)
@@ -993,7 +993,7 @@ impl<'u> ClientBuilder<'u> {
 		Ok(TcpStream::connect(self.extract_host_port(secure)?)?)
 	}
 
-	#[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]
+	#[cfg(any(feature = "sync-ssl"))]
 	fn extract_host_ssl_conn(
 		&self,
 		connector: Option<TlsConnector>,
@@ -1008,7 +1008,27 @@ impl<'u> ClientBuilder<'u> {
 		};
 		let connector = match connector {
 			Some(c) => c,
-			None => TlsConnector::builder()?.build()?,
+			None => TlsConnector::builder().build()?,
+		};
+		Ok((host, connector))
+	}
+
+	#[cfg(any(feature = "async-ssl"))]
+	fn extract_host_ssl_conn_async(
+		&self,
+		connector: Option<async_imports::TlsConnector>,
+	) -> WebSocketResult<(&str, async_imports::TlsConnector)> {
+		let host = match self.url.host_str() {
+			Some(h) => h,
+			None => {
+				return Err(WebSocketError::WebSocketUrlError(
+					WSUrlErrorKind::NoHostName,
+				))
+			}
+		};
+		let connector = match connector {
+			Some(c) => c,
+			None => async_imports::TlsConnector::from(TlsConnector::builder().build()?),
 		};
 		Ok((host, connector))
 	}
