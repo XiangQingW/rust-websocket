@@ -3,14 +3,14 @@
 //! This module has both an `HttpClientCodec` for an async HTTP client and an
 //! `HttpServerCodec` for an async HTTP server.
 use std::borrow::Cow;
-use std::io::{self, BufReader, Write};
+use std::io::{self, Write};
 use std::error::Error;
 use std::fmt::{self, Formatter, Display};
 
 use bytes::{BufMut, BytesMut, Bytes};
 use http::{self, Method, StatusCode, Uri};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use httparse::{self, Request};
+use httparse;
 use hyper;
 use tokio_io::codec::{Decoder, Encoder};
 

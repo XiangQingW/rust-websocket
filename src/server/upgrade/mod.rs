@@ -9,12 +9,12 @@ use stream::Stream;
 
 use unicase::Ascii;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use http::header::{CONNECTION, ORIGIN, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_EXTENSIONS,
+use http::header::{CONNECTION, SEC_WEBSOCKET_EXTENSIONS,
                    SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_PROTOCOL, SEC_WEBSOCKET_VERSION, UPGRADE};
-use http::{Method, StatusCode, Uri};
+use http::{Method, StatusCode};
 
 #[cfg(any(feature = "sync", feature = "async"))]
-use http::{self, Version};
+use http::Version;
 use httparse;
 
 use codec;
@@ -70,11 +70,12 @@ where
 	}
 
 	/// Select multiple extensions to use in the connection
-	pub fn use_extensions<I>(mut self, extensions: I) -> Self
+	pub fn use_extensions<I>(mut self, _extensions: I) -> Self
 	where
 		I: IntoIterator<Item = Extension>,
 	{
 		//let mut extensions: Vec<Extension> = extensions.into_iter().collect().join(", ");
+		// Need to re-add
 		self.headers.insert("Sec-WebSocket-Extensions", HeaderValue::from_static(""));
 		/*upsert_header!(self.headers; WebSocketExtensions; {
 			Some(protos) => protos.0.append(&mut extensions),

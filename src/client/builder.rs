@@ -4,10 +4,9 @@ use std::borrow::Cow;
 use std::io::BufRead;
 use std::str::FromStr;
 
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 pub use url::{Url, ParseError};
-use http;
-use http::header::{AsHeaderName, HeaderMap, HeaderName, HeaderValue};
+use http::header::{AsHeaderName, HeaderMap, HeaderValue};
 use http::header::{
 	CONNECTION, HOST, ORIGIN, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_EXTENSIONS,
 	SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_PROTOCOL, SEC_WEBSOCKET_VERSION, UPGRADE
@@ -54,7 +53,7 @@ mod async_imports {
 	pub use super::super::async;
 	pub use tokio_io::codec::Framed;
 	pub use tokio::net::TcpStream as AsyncTcpStream;
-	pub use tokio::net::ConnectFuture;
+	pub use tokio::net::tcp::ConnectFuture;
 	pub use tokio::reactor::Handle;
 	pub use futures::{Future, Sink};
 	pub use futures::future;

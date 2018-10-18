@@ -6,7 +6,6 @@ use std::convert::Into;
 #[cfg(feature = "sync-ssl")]
 use native_tls::{TlsStream, TlsAcceptor};
 
-use codec::http::RequestHead;
 use server::{WsServer, OptionalTlsAcceptor, NoTlsAcceptor, InvalidConnection};
 use server::upgrade::sync::{Upgrade, IntoWs, Buffer};
 pub use server::upgrade::HyperIntoWsError;
@@ -89,7 +88,7 @@ where
 	/// at the start of your server.
 	#[cfg(feature = "async")]
 	pub fn into_async(self, handle: &Handle) -> io::Result<async::Server<S>> {
-		let addr = self.listener.local_addr()?;
+		//let addr = self.listener.local_addr()?;
 		Ok(WsServer {
 			listener: AsyncTcpListener::from_std(self.listener, handle)?,
 			ssl_acceptor: self.ssl_acceptor,

@@ -17,14 +17,14 @@ use tokio_tls::TlsStream;
 
 /// The asynchronous specialization of a websocket server.
 /// Use this struct to create asynchronous servers.
-pub type Server<S: Send> = WsServer<S, TcpListener>;
+pub type Server<S> = WsServer<S, TcpListener>;
 
 /// A stream of websocket connections and addresses the server generates.
 ///
 /// Each item of the stream is the address of the incoming connection and an `Upgrade`
 /// struct which lets the user decide whether to turn the connection into a websocket
 /// connection or reject it.
-pub type Incoming<S: Send> = Box<
+pub type Incoming<S> = Box<
 	Stream<
 		Item = (Upgrade<S>, SocketAddr),
 		Error = InvalidConnection<S, BytesMut>,
@@ -39,7 +39,7 @@ impl WsServer<NoTlsAcceptor, TcpListener> {
 	/// return a `Future` but a simple `Result`.
 	pub fn bind<A: ToSocketAddrs>(addr: A, handle: &Handle) -> io::Result<Self> {
 		let tcp = ::std::net::TcpListener::bind(addr)?;
-		let address = tcp.local_addr()?;
+		//let address = tcp.local_addr()?;
 		Ok(Server {
 			listener: TcpListener::from_std(tcp, handle)?,
 			ssl_acceptor: NoTlsAcceptor,
@@ -98,7 +98,7 @@ impl WsServer<TlsAcceptor, TcpListener> {
 		handle: &Handle,
 	) -> io::Result<Self> {
 		let tcp = ::std::net::TcpListener::bind(addr)?;
-		let address = tcp.local_addr()?;
+		//let address = tcp.local_addr()?;
 		Ok(Server {
 			listener: TcpListener::from_std(tcp, handle)?,
 			ssl_acceptor: acceptor,

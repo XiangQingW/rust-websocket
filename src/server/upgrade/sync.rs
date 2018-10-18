@@ -167,7 +167,7 @@ where
 
 		let mut buf = String::new();
 		let mut reader = BufReader::new(self);
-		reader.read_line(&mut buf);
+		reader.read_line(&mut buf).unwrap();
 
 		// cleanup
 		let buf2 = buf.clone();
