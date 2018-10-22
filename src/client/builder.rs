@@ -681,13 +681,11 @@ impl<'u> ClientBuilder<'u> {
                     .map_err(|e| e.into())
             })
             .and_then(move |stream| {
-                warn!("begin async connect");
                 let dur = begin.elapsed();
                 CONNECTION_INFOS.with(|info| {
                     let mut info_mut = info.borrow_mut();
                     info_mut.2 = Some(dur);
                 });
-                warn!("tls dur: {:?}", dur);
                 builder.async_connect_on(stream)
             });
         Box::new(future)
