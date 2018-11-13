@@ -839,6 +839,12 @@ impl<'u> ClientBuilder<'u> {
         handle: &Handle,
     ) -> WebSocketResult<TcpStreamNew> {
         use std::time::Instant;
+
+        if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
+            info!("connect websocket custom address: {:?}", addr);
+            return Ok(async::TcpStream::connect(&addr, handle));
+        }
+
         // get the address to connect to, return an error future if ther's a problem
         let address = match super::dns::try_get_custom_addr(self.url.host_str().unwrap_or("")) {
             Some(addr) => addr,
@@ -868,7 +874,7 @@ impl<'u> ClientBuilder<'u> {
             }
         };
 
-        debug!("connect websocket address: {:?}", address);
+        info!("connect websocket address: {:?}", address);
         // connect a tcp stream
         Ok(async::TcpStream::connect(&address, handle))
     }
