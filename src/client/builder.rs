@@ -587,8 +587,7 @@ impl<'u> ClientBuilder<'u> {
                     connector
                         .connect_async(host.as_ref(), s)
                         .map_err(|e| e.into())
-                })
-                .and_then(move |stream| {
+                }).and_then(move |stream| {
                     let stream: Box<stream::async::Stream + Send> = Box::new(stream);
                     builder.async_connect_on(stream)
                 });
@@ -679,8 +678,7 @@ impl<'u> ClientBuilder<'u> {
                 connector
                     .connect_async(host.as_ref(), s)
                     .map_err(|e| e.into())
-            })
-            .and_then(move |stream| {
+            }).and_then(move |stream| {
                 let dur = begin.elapsed();
                 CONNECTION_INFOS.with(|info| {
                     let mut info_mut = info.borrow_mut();
@@ -846,7 +844,8 @@ impl<'u> ClientBuilder<'u> {
         }
 
         // get the address to connect to, return an error future if ther's a problem
-        let address = match super::dns::try_get_custom_addr(self.url.host_str().unwrap_or("")) {
+        let domain = self.url.host_str().unwrap_or("");
+        let address = match super::dns::try_get_custom_addr(domain) {
             Some(addr) => addr,
             None => {
                 let begin = Instant::now();
@@ -861,6 +860,7 @@ impl<'u> ClientBuilder<'u> {
                                 let mut info_mut = info.borrow_mut();
                                 info_mut.0 = Some(dur);
                             });
+                            super::dns::cache_addr(domain.to_owned(), a.clone());
                             a
                         }
                         None => {
@@ -869,7 +869,16 @@ impl<'u> ClientBuilder<'u> {
                             ));
                         }
                     },
-                    Err(e) => return Err(e.into()),
+                    Err(e) => match super::dns::try_get_cached_addr(domain) {
+                        Some(addr) => {
+                            info!(
+                                "get cached websocket addr: domain= {:?} addr= {:?}",
+                                domain, addr
+                            );
+                            addr
+                        }
+                        None => return Err(e.into()),
+                    },
                 }
             }
         };
@@ -954,24 +963,22 @@ impl<'u> ClientBuilder<'u> {
             ));
         }
 
-        if response.headers.get()
-            != Some(
-                &(Upgrade(vec![Protocol {
-                    name: ProtocolName::WebSocket,
-                    version: None,
-                }])),
-            ) {
+        if response.headers.get() != Some(
+            &(Upgrade(vec![Protocol {
+                name: ProtocolName::WebSocket,
+                version: None,
+            }])),
+        ) {
             return Err(WebSocketError::ResponseError(
                 "Upgrade field must be WebSocket",
             ));
         }
 
-        if self.headers.get()
-            != Some(
-                &(Connection(vec![ConnectionOption::ConnectionHeader(UniCase(
-                    "Upgrade".to_string(),
-                ))])),
-            ) {
+        if self.headers.get() != Some(
+            &(Connection(vec![ConnectionOption::ConnectionHeader(UniCase(
+                "Upgrade".to_string(),
+            ))])),
+        ) {
             return Err(WebSocketError::ResponseError(
                 "Connection field must be 'Upgrade'",
             ));
