@@ -924,29 +924,45 @@ impl<'u> ClientBuilder<'u> {
     ) -> WebSocketResult<ConnectFuture> {
         use std::time::Instant;
         let begin = Instant::now();
-        defer! {{
-            let dur = begin.elapsed();
-            CONNECTION_INFOS.with(|info| {
-                let mut info_mut = info.borrow_mut();
-                info_mut.0 = Some(dur);
-            });
-        }}
+
+        if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
+            info!("connect websocket custom address: {:?}", addr);
+            return Ok(async::TcpStream::connect(&addr));
+        }
 
         // get the address to connect to, return an error future if ther's a problem
-        let address = match self
-            .extract_host_port(secure)
-            .and_then(|p| Ok(p.to_socket_addrs()?))
-        {
-            Ok(mut s) => match s.next() {
-                Some(a) => a,
-                None => {
-                    return Err(WebSocketError::WebSocketUrlError(
-                        WSUrlErrorKind::NoHostName,
-                    ));
+        let domain = self.url.host_str().unwrap_or("");
+        let address = match super::dns::try_get_custom_addr(domain) {
+            Some(addr) => addr,
+            None => {
+                match self
+                    .extract_host_port(secure)
+                    .and_then(|p| Ok(p.to_socket_addrs()?))
+                {
+                    Ok(mut s) => match s.next() {
+                        Some(a) => {
+                            let dur = begin.elapsed();
+                            CONNECTION_INFOS.with(|info| {
+                                let mut info_mut = info.borrow_mut();
+                                info_mut.0 = Some(dur);
+                            });
+                            a
+                        },
+                        None => return Err(WebSocketError::WebSocketUrlError(
+                                WSUrlErrorKind::NoHostName,
+                            ))
+                        }
+                    Err(e) => match super::dns::try_get_cached_addr(domain) {
+                        Some(addr) => {
+                            info!("get cached websocket addr: domain= {:?} addr= {:?}", domain, addr);
+                            addr
+                        }
+                        None => return Err(e.into()),
+                    }
                 }
-            },
-            Err(e) => return Err(e.into()),
+            }
         };
+        info!("connect websocket address: {:?}", address);
 
         // connect a tcp stream
         Ok(async::TcpStream::connect(&address))
@@ -1002,20 +1018,30 @@ impl<'u> ClientBuilder<'u> {
 
     #[cfg(any(feature = "sync", feature = "async"))]
     fn validate(&self, response: &ResponseHead) -> WebSocketResult<()> {
-        let status = if response.subject != StatusCode::SWITCHING_PROTOCOLS {
-            None
-        } else {
-            Some(response.subject)
-        };
+        let status = response.subject;
 
-        let status = match status {
-            Some(status) => status,
-            _ => {
-                return Err(WebSocketError::ResponseError(
-                    "Status code must be Switching Protocols",
-                ))
+        if status != StatusCode::SWITCHING_PROTOCOLS {
+            let get_header_value = |header_name: &'static str| {
+                match response.headers.get(header_name) {
+                    Some(code) => {
+                        let code = code.as_bytes();
+                        let code = String::from_utf8_lossy(code);
+                        code.parse().unwrap_or(0)
+                    }
+                    None => 0,
+                }
+            };
+
+            const AUTH_ERROR_STATUS: u32 = 514;
+            const AUTH_HEADER: &str = "Handshake-Status";
+            let auth_status = get_header_value(AUTH_HEADER);
+            let is_auth_failed = auth_status == AUTH_ERROR_STATUS;
+
+            if is_auth_failed {
+                let auth_resp_code = get_header_value(AUTH_HEADER);
+                return Err(WebSocketError::AuthError(auth_resp_code));
             }
-        };
+        }
 
         let key: WebSocketKey = self
             .headers

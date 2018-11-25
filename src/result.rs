@@ -63,6 +63,8 @@ pub enum WebSocketError {
     TlsHandshakeInterruption,
     /// A UTF-8 error
     Utf8Error(Utf8Error),
+    /// Auth error
+    AuthError(u32)
 }
 
 impl fmt::Display for WebSocketError {
@@ -92,6 +94,7 @@ impl Error for WebSocketError {
             WebSocketError::TlsHandshakeInterruption => "TLS Handshake interrupted",
             WebSocketError::Utf8Error(_) => "UTF-8 failure",
             WebSocketError::WebSocketUrlError(_) => "WebSocket URL failure",
+            WebSocketError::AuthError(_) => "WebSocket Auth failure",
         }
     }
 

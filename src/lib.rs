@@ -59,6 +59,10 @@ extern crate webpki;
 extern crate webpki_roots;
 
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate log;
+#[macro_use]
 extern crate bitflags;
 #[macro_use(defer)]
 extern crate scopeguard;
