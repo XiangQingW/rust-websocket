@@ -5,19 +5,19 @@
 //! an intermediate struct called `Upgrade` and the `Upgrade` struct itself.
 //! The `Upgrade` struct is used to inspect details of the websocket connection
 //! (e.g. what protocols it wants to use) and decide whether to accept or reject it.
-use super::{HyperIntoWsError, WsUpgrade, validate};
-use std::io::{self, ErrorKind};
-use tokio_io::codec::{Framed, FramedParts};
-use http::header::HeaderMap;
-use http::StatusCode;
-use stream::async::Stream;
-use futures::{Sink, Future};
-use futures::Stream as StreamTrait;
-use futures::sink::Send;
-use codec::http::{RequestHead, HttpServerCodec};
-use codec::ws::{MessageCodec, Context};
+use super::{validate, HyperIntoWsError, WsUpgrade};
 use bytes::BytesMut;
 use client::async::ClientNew;
+use codec::http::{HttpServerCodec, RequestHead};
+use codec::ws::{Context, MessageCodec};
+use futures::sink::Send;
+use futures::Stream as StreamTrait;
+use futures::{Future, Sink};
+use http::header::HeaderMap;
+use http::StatusCode;
+use std::io::{self, ErrorKind};
+use stream::async::Stream;
+use tokio_io::codec::{Framed, FramedParts};
 
 use codec::http::MessageHead;
 
@@ -69,84 +69,87 @@ pub type Upgrade<S> = WsUpgrade<S, BytesMut>;
 /// module under the name `Upgrade`.
 impl<S> WsUpgrade<S, BytesMut>
 where
-	S: Stream + ::std::marker::Send + 'static,
+    S: Stream + ::std::marker::Send + 'static,
 {
-	/// Asynchronously accept the websocket handshake, then create a client.
-	/// This will asynchronously send a response accepting the connection
-	/// and create a websocket client.
-	pub fn accept(self) -> ClientNew<S> {
-		self.internal_accept(None)
-	}
+    /// Asynchronously accept the websocket handshake, then create a client.
+    /// This will asynchronously send a response accepting the connection
+    /// and create a websocket client.
+    pub fn accept(self) -> ClientNew<S> {
+        self.internal_accept(None)
+    }
 
-	/// Asynchronously accept the websocket handshake, then create a client.
-	/// This will asynchronously send a response accepting the connection
-	/// with custom headers in the response and create a websocket client.
-	pub fn accept_with(self, custom_headers: HeaderMap) -> ClientNew<S> {
-		self.internal_accept(Some(custom_headers))
-	}
+    /// Asynchronously accept the websocket handshake, then create a client.
+    /// This will asynchronously send a response accepting the connection
+    /// with custom headers in the response and create a websocket client.
+    pub fn accept_with(self, custom_headers: HeaderMap) -> ClientNew<S> {
+        self.internal_accept(Some(custom_headers))
+    }
 
-	fn internal_accept(mut self, custom_headers: Option<HeaderMap>) -> ClientNew<S> {
-		let status = self.prepare_headers(custom_headers);
-		let WsUpgrade { headers, stream, request, buffer } = self;
+    fn internal_accept(mut self, custom_headers: Option<HeaderMap>) -> ClientNew<S> {
+        let status = self.prepare_headers(custom_headers);
+        let WsUpgrade {
+            headers,
+            stream,
+            request,
+            buffer,
+        } = self;
 
-		let duplex = Framed::from_parts(
-			FramedParts {
-				inner: stream,
-				readbuf: buffer,
-				writebuf: BytesMut::with_capacity(0),
-			},
-			HttpServerCodec,
-		);
+        let duplex = Framed::from_parts(
+            FramedParts {
+                inner: stream,
+                readbuf: buffer,
+                writebuf: BytesMut::with_capacity(0),
+            },
+            HttpServerCodec,
+        );
 
-		let future = duplex.send(MessageHead {
-			version: request.version,
-			subject: status,
-			headers: headers.clone(),
-		})
-		                   .map(move |s| {
-			let codec = MessageCodec::default(Context::Server);
-			let client = Framed::from_parts(s.into_parts(), codec);
-			(client, headers)
-		})
-		                   .map_err(|e| e.into());
-		Box::new(future)
-	}
+        let future = duplex
+            .send(MessageHead {
+                version: request.version,
+                subject: status,
+                headers: headers.clone(),
+            }).map(move |s| {
+                let codec = MessageCodec::default(Context::Server);
+                let client = Framed::from_parts(s.into_parts(), codec);
+                (client, headers)
+            }).map_err(|e| e.into());
+        Box::new(future)
+    }
 
-	/// Asynchronously send a rejection message and deconstruct `self`
-	/// into it's original stream. The stream being returned is framed with the
-	/// `HttpServerCodec` since that was used to send the rejection message.
-	pub fn reject(self) -> Send<Framed<S, HttpServerCodec>> {
-		self.internal_reject(None)
-	}
+    /// Asynchronously send a rejection message and deconstruct `self`
+    /// into it's original stream. The stream being returned is framed with the
+    /// `HttpServerCodec` since that was used to send the rejection message.
+    pub fn reject(self) -> Send<Framed<S, HttpServerCodec>> {
+        self.internal_reject(None)
+    }
 
-	/// Asynchronously send a rejection message with custom headers and
-	/// deconstruct `self` into it's original stream.
-	///  The stream being returned is framed with the
-	/// `HttpServerCodec` since that was used to send the rejection message.
-	pub fn reject_with(self, headers: HeaderMap) -> Send<Framed<S, HttpServerCodec>> {
-		self.internal_reject(Some(headers))
-	}
+    /// Asynchronously send a rejection message with custom headers and
+    /// deconstruct `self` into it's original stream.
+    ///  The stream being returned is framed with the
+    /// `HttpServerCodec` since that was used to send the rejection message.
+    pub fn reject_with(self, headers: HeaderMap) -> Send<Framed<S, HttpServerCodec>> {
+        self.internal_reject(Some(headers))
+    }
 
-	fn internal_reject(mut self, headers: Option<HeaderMap>) -> Send<Framed<S, HttpServerCodec>> {
-		if let Some(custom) = headers {
-			self.headers.extend(custom.into_iter());
-		}
-		let duplex = Framed::from_parts(
-			FramedParts {
-				inner: self.stream,
-				readbuf: self.buffer,
-				writebuf: BytesMut::with_capacity(0),
-			},
-			HttpServerCodec,
-		);
-		duplex.send(MessageHead {
-			version: self.request.version,
-			subject: StatusCode::BAD_REQUEST,
-			headers: self.headers,
-		})
-	}
+    fn internal_reject(mut self, headers: Option<HeaderMap>) -> Send<Framed<S, HttpServerCodec>> {
+        if let Some(custom) = headers {
+            self.headers.extend(custom.into_iter());
+        }
+        let duplex = Framed::from_parts(
+            FramedParts {
+                inner: self.stream,
+                readbuf: self.buffer,
+                writebuf: BytesMut::with_capacity(0),
+            },
+            HttpServerCodec,
+        );
+        duplex.send(MessageHead {
+            version: self.request.version,
+            subject: StatusCode::BAD_REQUEST,
+            headers: self.headers,
+        })
+    }
 }
-
 
 /// Trait to take a stream or similar and attempt to recover the start of a
 /// websocket handshake from it (asynchronously).
@@ -197,61 +200,58 @@ where
 /// }
 /// ```
 pub trait IntoWs {
-	/// The type of stream this upgrade process is working with (TcpStream, etc.)
-	type Stream: Stream + ::std::marker::Send;
-	/// An error value in case the stream is not asking for a websocket connection
-	/// or something went wrong. It is common to also include the stream here.
-	type Error;
-	/// Attempt to read and parse the start of a Websocket handshake, later
-	/// with the  returned `WsUpgrade` struct, call `accept to start a
-	/// websocket client, and `reject` to send a handshake rejection response.
-	///
-	/// Note: this is the asynchronous version, meaning it will not block when
-	/// trying to read a request.
-	fn into_ws(
-		self,
-	) -> Box<Future<Item = Upgrade<Self::Stream>, Error = Self::Error> + ::std::marker::Send>;
+    /// The type of stream this upgrade process is working with (TcpStream, etc.)
+    type Stream: Stream + ::std::marker::Send;
+    /// An error value in case the stream is not asking for a websocket connection
+    /// or something went wrong. It is common to also include the stream here.
+    type Error;
+    /// Attempt to read and parse the start of a Websocket handshake, later
+    /// with the  returned `WsUpgrade` struct, call `accept to start a
+    /// websocket client, and `reject` to send a handshake rejection response.
+    ///
+    /// Note: this is the asynchronous version, meaning it will not block when
+    /// trying to read a request.
+    fn into_ws(
+        self,
+    ) -> Box<Future<Item = Upgrade<Self::Stream>, Error = Self::Error> + ::std::marker::Send>;
 }
 
 impl<S> IntoWs for S
 where
-	S: Stream + ::std::marker::Send + 'static,
+    S: Stream + ::std::marker::Send + 'static,
 {
-	type Stream = S;
-	type Error = (S, Option<RequestHead>, BytesMut, HyperIntoWsError);
+    type Stream = S;
+    type Error = (S, Option<RequestHead>, BytesMut, HyperIntoWsError);
 
-	fn into_ws(
-		self,
-	) -> Box<Future<Item = Upgrade<Self::Stream>, Error = Self::Error> + ::std::marker::Send> {
-		let future = self.framed(HttpServerCodec)
-		                 .into_future()
-		                 .map_err(|(e, s)| {
-			let FramedParts { inner, readbuf, .. } = s.into_parts();
-			(inner, None, readbuf, e.into())
-		})
-		                 .and_then(|(m, s)| {
-			let FramedParts { inner, readbuf, .. } = s.into_parts();
-			if let Some(msg) = m {
-				match validate(&msg.subject.0, &msg.version, &msg.headers) {
-					Ok(()) => Ok((msg, inner, readbuf)),
-					Err(e) => Err((inner, None, readbuf, e)),
-				}
-			} else {
-				let err = HyperIntoWsError::Io(io::Error::new(
-					ErrorKind::ConnectionReset,
-					"Connection dropped before handshake could be read",
-				));
-				Err((inner, None, readbuf, err))
-			}
-		})
-		                 .map(|(m, stream, buffer)| {
-			WsUpgrade {
-				headers: HeaderMap::new(),
-				stream: stream,
-				request: m,
-				buffer: buffer,
-			}
-		});
-		Box::new(future)
-	}
+    fn into_ws(
+        self,
+    ) -> Box<Future<Item = Upgrade<Self::Stream>, Error = Self::Error> + ::std::marker::Send> {
+        let future = self
+            .framed(HttpServerCodec)
+            .into_future()
+            .map_err(|(e, s)| {
+                let FramedParts { inner, readbuf, .. } = s.into_parts();
+                (inner, None, readbuf, e.into())
+            }).and_then(|(m, s)| {
+                let FramedParts { inner, readbuf, .. } = s.into_parts();
+                if let Some(msg) = m {
+                    match validate(&msg.subject.0, &msg.version, &msg.headers) {
+                        Ok(()) => Ok((msg, inner, readbuf)),
+                        Err(e) => Err((inner, None, readbuf, e)),
+                    }
+                } else {
+                    let err = HyperIntoWsError::Io(io::Error::new(
+                        ErrorKind::ConnectionReset,
+                        "Connection dropped before handshake could be read",
+                    ));
+                    Err((inner, None, readbuf, err))
+                }
+            }).map(|(m, stream, buffer)| WsUpgrade {
+                headers: HeaderMap::new(),
+                stream: stream,
+                request: m,
+                buffer: buffer,
+            });
+        Box::new(future)
+    }
 }
