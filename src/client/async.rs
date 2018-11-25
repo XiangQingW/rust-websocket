@@ -42,16 +42,18 @@
 //! # }
 //! ```
 
-pub use tokio::reactor::Handle;
-pub use tokio_io::codec::Framed;
-pub use tokio::net::TcpStream;
 pub use futures::Future;
 use http::header::HeaderMap;
+pub use tokio::net::TcpStream;
+pub use tokio::reactor::Handle;
+pub use tokio_io::codec::Framed;
 
-use result::WebSocketError;
 use codec::ws::MessageCodec;
 use message::OwnedMessage;
+use result::WebSocketError;
 
+#[cfg(feature = "async-rustls")]
+pub use tokio_rustls::TlsStream;
 #[cfg(feature = "async-ssl")]
 pub use tokio_tls::TlsStream;
 
@@ -70,7 +72,4 @@ pub type Client<S> = Framed<S, MessageCodec<OwnedMessage>>;
 /// headers to see if the server accepted the protocol or other custom header.
 /// This crate will not automatically close the connection if the server refused
 /// to use the user protocols given to it, you must check that the server accepted.
-pub type ClientNew<S> = Box<
-	Future<Item = (Client<S>, HeaderMap), Error = WebSocketError>
-		+ Send,
->;
+pub type ClientNew<S> = Box<Future<Item = (Client<S>, HeaderMap), Error = WebSocketError> + Send>;

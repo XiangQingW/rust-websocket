@@ -40,17 +40,17 @@
 pub use self::message::Message;
 
 #[cfg(feature = "sync")]
-pub use self::sender::Sender;
-#[cfg(feature = "sync")]
 pub use self::receiver::Receiver;
 #[cfg(feature = "sync")]
 pub use self::receiver::{DataFrameIterator, MessageIterator};
+#[cfg(feature = "sync")]
+pub use self::sender::Sender;
 
+pub mod dataframe;
 pub mod message;
 pub mod util;
-pub mod dataframe;
 
 #[cfg(feature = "sync")]
-pub mod sender;
-#[cfg(feature = "sync")]
 pub mod receiver;
+#[cfg(feature = "sync")]
+pub mod sender;

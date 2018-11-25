@@ -4,12 +4,12 @@ use native_tls::TlsAcceptor;
 
 #[cfg(feature = "async-ssl")]
 mod async_imports {
-	pub use tokio_tls::TlsAcceptor;
+    pub use tokio_tls::TlsAcceptor;
 }
 
+use self::upgrade::HyperIntoWsError;
 use codec::http::RequestHead;
 use stream::Stream;
-use self::upgrade::HyperIntoWsError;
 
 pub mod upgrade;
 
@@ -41,21 +41,21 @@ impl OptionalTlsAcceptor for async_imports::TlsAcceptor {}
 /// else (such as HTTP).
 pub struct InvalidConnection<S, B>
 where
-	S: Stream + Send,
-	B: Send,
+    S: Stream + Send,
+    B: Send,
 {
-	/// if the stream was successfully setup it will be included here
-	/// on a failed connection.
-	pub stream: Option<S>,
-	/// the parsed request. **This is a normal HTTP request** meaning you can
-	/// simply run this server and handle both HTTP and Websocket connections.
-	/// If you already have a server you want to use, checkout the
-	/// `server::upgrade` module to integrate this crate with your server.
-	pub parsed: Option<RequestHead>,
-	/// the buffered data that was already taken from the stream
-	pub buffer: Option<B>,
-	/// the cause of the failed websocket connection setup
-	pub error: HyperIntoWsError,
+    /// if the stream was successfully setup it will be included here
+    /// on a failed connection.
+    pub stream: Option<S>,
+    /// the parsed request. **This is a normal HTTP request** meaning you can
+    /// simply run this server and handle both HTTP and Websocket connections.
+    /// If you already have a server you want to use, checkout the
+    /// `server::upgrade` module to integrate this crate with your server.
+    pub parsed: Option<RequestHead>,
+    /// the buffered data that was already taken from the stream
+    pub buffer: Option<B>,
+    /// the cause of the failed websocket connection setup
+    pub error: HyperIntoWsError,
 }
 
 /// Represents a WebSocket server which can work with either normal
@@ -98,10 +98,10 @@ where
 #[cfg(any(feature = "sync", feature = "async"))]
 pub struct WsServer<S, L>
 where
-	S: OptionalTlsAcceptor + Send,
-	L: Send,
+    S: OptionalTlsAcceptor + Send,
+    L: Send,
 {
-	listener: L,
-	/// The SSL acceptor given to the server
-	pub ssl_acceptor: S,
+    listener: L,
+    /// The SSL acceptor given to the server
+    pub ssl_acceptor: S,
 }
