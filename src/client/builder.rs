@@ -182,8 +182,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-										Some(protos) => protos.0.push(protocol.into()),
-										None => WebSocketProtocol(vec![protocol.into()])
+																		Some(protos) => protos.0.push(protocol.into()),
+																		None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -209,8 +209,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-										Some(protos) => protos.0.append(&mut protocols),
-										None => WebSocketProtocol(protocols)
+																		Some(protos) => protos.0.append(&mut protocols),
+																		None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -242,8 +242,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-										Some(protos) => protos.0.push(extension),
-										None => WebSocketExtensions(vec![extension])
+																		Some(protos) => protos.0.push(extension),
+																		None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -278,8 +278,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-										Some(protos) => protos.0.append(&mut extensions),
-										None => WebSocketExtensions(extensions)
+																		Some(protos) => protos.0.append(&mut extensions),
+																		None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -649,6 +649,7 @@ impl<'u> ClientBuilder<'u> {
 		Box::new(future)
 	}
 
+	/// async rustls
 	#[cfg(feature = "async-rustls")]
 	pub fn async_connect_secure(
 		self,
@@ -824,23 +825,29 @@ impl<'u> ClientBuilder<'u> {
 		secure: Option<bool>,
 	) -> Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send> {
 		// get the address to connect to, return an error future if ther's a problem
-		let address = match self
-			.extract_host_port(secure)
-			.and_then(|p| Ok(p.to_socket_addrs()?))
-		{
-			Ok(mut s) => match s.next() {
-				Some(a) => a,
-				None => {
-					return Box::new(
-						Err(WebSocketError::WebSocketUrlError(
-							WSUrlErrorKind::NoHostName,
-						))
-						.into_future(),
-					);
+		let address = match super::dns::try_get_custom_addr(self.url.host_str().unwrap_or("")) {
+			Some(addr) => addr,
+			None => {
+				match self
+					.extract_host_port(secure)
+					.and_then(|p| Ok(p.to_socket_addrs()?))
+				{
+					Ok(mut s) => match s.next() {
+						Some(a) => a,
+						None => {
+							return Box::new(
+								Err(WebSocketError::WebSocketUrlError(
+									WSUrlErrorKind::NoHostName,
+								))
+								.into_future(),
+							);
+						}
+					},
+					Err(e) => return Box::new(Err(e).into_future()),
 				}
-			},
-			Err(e) => return Box::new(Err(e).into_future()),
+			}
 		};
+		debug!("connect websocket address: {:?}", address);
 
 		// connect a tcp stream
 		Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into()))
@@ -883,6 +890,24 @@ impl<'u> ClientBuilder<'u> {
 		let status = StatusCode::from_u16(response.subject.0);
 
 		if status != StatusCode::SwitchingProtocols {
+			let get_header_value =
+				|header_name: &'static str| match response.headers.get_raw(header_name) {
+					Some(code) => {
+						let empty_code = vec![];
+						let code = String::from_utf8_lossy(code.first().unwrap_or(&empty_code));
+						code.parse().unwrap_or(0)
+					}
+					None => 0,
+				};
+
+			const AUTH_ERROR_STATUS: u32 = 514;
+			let auth_status = get_header_value("Handshake-Status");
+			let is_auth_failed = auth_status == AUTH_ERROR_STATUS;
+
+			if is_auth_failed {
+				let auth_resp_code = get_header_value("Handshake-Msg");
+				return Err(WebSocketError::AuthError(auth_resp_code));
+			}
 			return Err(WebSocketError::ResponseError(
 				"Status code must be Switching Protocols",
 			));

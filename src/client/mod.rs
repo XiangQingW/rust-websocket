@@ -14,6 +14,7 @@
 //! `websocket::{sync, async}::client` module which will have all sync or all async things.
 
 pub mod builder;
+pub mod dns;
 pub use self::builder::{ClientBuilder, ParseError, Url};
 
 #[cfg(feature = "async")]

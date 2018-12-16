@@ -59,6 +59,11 @@ extern crate webpki;
 extern crate webpki_roots;
 
 #[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate log;
+
+#[macro_use]
 extern crate bitflags;
 
 #[cfg(all(feature = "nightly", test))]
