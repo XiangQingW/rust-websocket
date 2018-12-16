@@ -38,6 +38,12 @@ use stream::sync::NetworkStream;
 use native_tls::TlsConnector;
 #[cfg(feature = "sync-ssl")]
 use native_tls::TlsStream;
+#[cfg(any(feature = "sync-rustls", feature = "async-rustls"))]
+use rustls::{ClientConfig, ClientSession};
+#[cfg(any(feature = "sync-rustls", feature = "async-rustls"))]
+use std::sync::Arc;
+#[cfg(feature = "async-rustls")]
+use tokio_rustls::TlsConnector;
 
 #[cfg(feature = "async")]
 mod async_imports {
@@ -176,8 +182,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-			Some(protos) => protos.0.push(protocol.into()),
-			None => WebSocketProtocol(vec![protocol.into()])
+										Some(protos) => protos.0.push(protocol.into()),
+										None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -203,8 +209,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-			Some(protos) => protos.0.append(&mut protocols),
-			None => WebSocketProtocol(protocols)
+										Some(protos) => protos.0.append(&mut protocols),
+										None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -236,8 +242,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-			Some(protos) => protos.0.push(extension),
-			None => WebSocketExtensions(vec![extension])
+										Some(protos) => protos.0.push(extension),
+										None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -272,8 +278,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-			Some(protos) => protos.0.append(&mut extensions),
-			None => WebSocketExtensions(extensions)
+										Some(protos) => protos.0.append(&mut extensions),
+										None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -643,6 +649,40 @@ impl<'u> ClientBuilder<'u> {
 		Box::new(future)
 	}
 
+	#[cfg(feature = "async-rustls")]
+	pub fn async_connect_secure(
+		self,
+		ssl_config: Option<ClientConfig>,
+	) -> async::ClientNew<async::TlsStream<async::TcpStream, ClientSession>> {
+		// connect to the tcp stream
+		let tcp_stream = self.async_tcpstream(Some(true));
+
+		// configure the tls connection
+		let (host, connector) = {
+			match self.extract_host_ssl_conn(ssl_config) {
+				Ok((h, config)) => (
+					::webpki::DNSName::from(h),
+					TlsConnector::from(Arc::new(config)),
+				),
+				Err(e) => return Box::new(future::err(e)),
+			}
+		};
+
+		let builder = ClientBuilder {
+			url: Cow::Owned(self.url.into_owned()),
+			version: self.version,
+			headers: self.headers,
+			version_set: self.version_set,
+			key_set: self.key_set,
+		};
+
+		// put it all together
+		let future = tcp_stream
+			.and_then(move |s| connector.connect(host.as_ref(), s).map_err(|e| e.into()))
+			.and_then(move |stream| builder.async_connect_on(stream));
+		Box::new(future)
+	}
+
 	// TODO: add conveniences like .response_to_pings, .send_close, etc.
 	/// Asynchronously create an insecure (plain TCP) connection to the client.
 	///
@@ -932,6 +972,34 @@ impl<'u> ClientBuilder<'u> {
 			None => TlsConnector::builder().build()?,
 		};
 		Ok((host, connector))
+	}
+
+	#[cfg(any(feature = "sync-rustls", feature = "async-rustls"))]
+	fn extract_host_ssl_conn(
+		&self,
+		ssl_config: Option<ClientConfig>,
+	) -> WebSocketResult<(::webpki::DNSNameRef, ClientConfig)> {
+		let host = match self.url.host_str() {
+			Some(h) => ::webpki::DNSNameRef::from_ascii_str_danger(h),
+			None => {
+				return Err(WebSocketError::WebSocketUrlError(
+					WSUrlErrorKind::NoHostName,
+				));
+			}
+		};
+
+		let config = match ssl_config {
+			Some(c) => c,
+			None => {
+				let mut tls_config = ClientConfig::new();
+				tls_config
+					.root_store
+					.add_server_trust_anchors(&::webpki_roots::TLS_SERVER_ROOTS);
+				tls_config.key_log = Arc::new(::rustls::KeyLogFile::new());
+				tls_config
+			}
+		};
+		Ok((host, config))
 	}
 
 	#[cfg(feature = "sync-ssl")]

@@ -30,13 +30,23 @@ tokio-tls = { version = "0.2.0", optional = true }
 bytes = { version = "0.4", optional = true }
 native-tls = { version = "0.2.1", optional = true }
 
+tokio-rustls = { version = "0.8.0", optional = true }
+rustls = { version = "0.14.0", optional = true }
+webpki = { version = "0.18.1", optional = true }
+webpki-roots = { version = "0.15.0", optional = true }
+
 [dev-dependencies]
 futures-cpupool = "0.1"
 
 [features]
-default = ["sync", "sync-ssl", "async", "async-ssl"]
+default = ["sync", "sync-rustls", "async", "async-rustls"]
 sync = []
+sync-rustls = ["rustls", "webpki", "webpki-roots", "sync"]
 sync-ssl = ["native-tls", "sync"]
 async = ["tokio", "bytes", "futures"]
+async-rustls = ["rustls", "tokio-rustls", "webpki", "webpki-roots", "async"]
 async-ssl = ["native-tls", "tokio-tls", "async"]
 nightly = ["hyper/nightly"]
+
+[replace]
+"webpki:0.18.1" = { git = "https://github.com/passchaos/webpki", rev = "251388" }

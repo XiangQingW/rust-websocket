@@ -54,6 +54,8 @@ use codec::ws::MessageCodec;
 use message::OwnedMessage;
 use result::WebSocketError;
 
+#[cfg(feature = "async-rustls")]
+pub use tokio_rustls::TlsStream;
 #[cfg(feature = "async-ssl")]
 pub use tokio_tls::TlsStream;
 

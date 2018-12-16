@@ -49,6 +49,15 @@ extern crate tokio_tls;
 extern crate unicase;
 pub extern crate url;
 
+#[cfg(any(feature = "sync-rustls", feature = "async-rustlf"))]
+extern crate rustls;
+#[cfg(feature = "async-rustls")]
+extern crate tokio_rustls;
+#[cfg(any(feature = "sync-rustls", feature = "async-rustlf"))]
+extern crate webpki;
+#[cfg(any(feature = "sync-rustls", feature = "async-rustlf"))]
+extern crate webpki_roots;
+
 #[macro_use]
 extern crate bitflags;
 
