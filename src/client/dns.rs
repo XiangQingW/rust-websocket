@@ -42,7 +42,7 @@ pub fn try_get_custom_addr(domain: &str) -> Option<SocketAddr> {
 }
 
 /// remove custom addr-ip setting
-pub fn remove_custom_add(domain: &str) {
+pub fn remove_custom_addr(domain: &str) {
 	if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
 		addrs.remove(domain);
 	}
