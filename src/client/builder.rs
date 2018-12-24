@@ -200,8 +200,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-																																																																		Some(protos) => protos.0.push(protocol.into()),
-																																																																		None => WebSocketProtocol(vec![protocol.into()])
+																																																																																																																																		Some(protos) => protos.0.push(protocol.into()),
+																																																																																																																																		None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -227,8 +227,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-																																																																		Some(protos) => protos.0.append(&mut protocols),
-																																																																		None => WebSocketProtocol(protocols)
+																																																																																																																																		Some(protos) => protos.0.append(&mut protocols),
+																																																																																																																																		None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -260,8 +260,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-																																																																		Some(protos) => protos.0.push(extension),
-																																																																		None => WebSocketExtensions(vec![extension])
+																																																																																																																																		Some(protos) => protos.0.push(extension),
+																																																																																																																																		None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -296,8 +296,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-																																																																		Some(protos) => protos.0.append(&mut extensions),
-																																																																		None => WebSocketExtensions(extensions)
+																																																																																																																																		Some(protos) => protos.0.append(&mut extensions),
+																																																																																																																																		None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -559,11 +559,7 @@ impl<'u> ClientBuilder<'u> {
 	/// runtime.block_on(echo_future).unwrap();
 	/// # }
 	/// ```
-	#[cfg(feature = "async-ssl")]
-	pub fn async_connect(
-		self,
-		ssl_config: Option<TlsConnector>,
-	) -> async::ClientNew<Box<stream::async::Stream + Send>> {
+	pub fn async_connect(self) -> async::ClientNew<Box<stream::async::Stream + Send>> {
 		// connect to the tcp stream
 		let tcp_stream = self.async_tcpstream(None);
 
@@ -575,31 +571,12 @@ impl<'u> ClientBuilder<'u> {
 			key_set: self.key_set,
 		};
 
-		// check if we should connect over ssl or not
-		if builder.url.scheme() == "wss" {
-			// configure the tls connection
-			let (host, connector) = {
-				match builder.extract_host_ssl_conn(ssl_config) {
-					Ok((h, conn)) => (h.to_string(), TlsConnectorExt::from(conn)),
-					Err(e) => return Box::new(future::err(e)),
-				}
-			};
-			// secure connection, wrap with ssl
-			let future = tcp_stream
-				.and_then(move |s| connector.connect(&host, s).map_err(|e| e.into()))
-				.and_then(move |stream| {
-					let stream: Box<stream::async::Stream + Send> = Box::new(stream);
-					builder.async_connect_on(stream)
-				});
-			Box::new(future)
-		} else {
-			// insecure connection, connect normally
-			let future = tcp_stream.and_then(move |stream| {
-				let stream: Box<stream::async::Stream + Send> = Box::new(stream);
-				builder.async_connect_on(stream)
-			});
-			Box::new(future)
-		}
+		// insecure connection, connect normally
+		let future = tcp_stream.and_then(move |stream| {
+			let stream: Box<stream::async::Stream + Send> = Box::new(stream);
+			builder.async_connect_on(stream)
+		});
+		Box::new(future)
 	}
 
 	/// Asynchronously create an SSL connection to a websocket sever.
