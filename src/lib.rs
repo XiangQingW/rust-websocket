@@ -36,6 +36,7 @@ extern crate byteorder;
 #[cfg(feature = "async")]
 extern crate bytes;
 #[cfg(feature = "async")]
+#[macro_use]
 pub extern crate futures;
 extern crate hyper;
 #[cfg(any(feature = "sync-ssl", feature = "async-ssl"))]

@@ -38,6 +38,8 @@ use stream::sync::NetworkStream;
 use native_tls::TlsConnector;
 #[cfg(feature = "sync-ssl")]
 use native_tls::TlsStream;
+#[cfg(feature = "async-rustls")]
+use rustls::Session;
 #[cfg(any(feature = "sync-rustls", feature = "async-rustls"))]
 use rustls::{ClientConfig, ClientSession};
 #[cfg(any(feature = "sync-rustls", feature = "async-rustls"))]
@@ -64,22 +66,109 @@ mod async_imports {
 use self::async_imports::*;
 
 use std::cell::RefCell;
-use std::time::{Duration, Instant};
-type ConnectionSteps = (Option<Duration>, Option<Duration>, Option<Duration>);
+use std::net::SocketAddr;
+use std::time::Instant;
 
-/// get connection step info
-pub fn get_connection_infos() -> ConnectionSteps {
-	CONNECTION_INFOS.with(|info| {
-		let (dns, tcp, tls) = info.clone().into_inner();
-		{
-			*info.borrow_mut() = (None, None, None);
-		}
-
-		(dns, tcp, tls)
-	})
+/// get connection steps pair addrs
+pub fn get_connection_pair_addrs() -> Option<(SocketAddr, SocketAddr)> {
+	PAIR_ADDRS.with(|item| item.borrow().clone())
 }
 
-thread_local!(static CONNECTION_INFOS: RefCell<ConnectionSteps> = RefCell::new((None, None, None)));
+/// set connection dns resolve finished timestamp
+fn set_connection_begin_ts() {
+	CONNECTION_BEGIN_TS.with(|item| *item.borrow_mut() = Instant::now())
+}
+
+/// get connection begin timestamp
+pub fn get_connection_begin_ts() -> Instant {
+	CONNECTION_BEGIN_TS.with(|item| item.borrow().clone())
+}
+
+/// is use ip directly
+pub fn get_use_ip_directly() -> Option<bool> {
+	USE_IP_DIRECTLY.with(|item| item.borrow().clone())
+}
+
+/// set connection dns resolve finished timestamp
+fn set_dns_finished_ts() {
+	DNS_FINISHED_TS.with(|item| *item.borrow_mut() = Some(Instant::now()))
+}
+
+/// get connection dns resolve finished timestamp
+pub fn get_dns_finished_ts() -> Option<Instant> {
+	DNS_FINISHED_TS.with(|item| item.borrow().clone())
+}
+
+/// set connection tcp connect finished timestamp
+fn set_tcp_finished_ts() {
+	TCP_FINISHED_TS.with(|item| *item.borrow_mut() = Some(Instant::now()))
+}
+
+/// get connection tcp connect finished timestamp
+pub fn get_tcp_finished_ts() -> Option<Instant> {
+	TCP_FINISHED_TS.with(|item| item.borrow().clone())
+}
+
+/// set connection tls handshake finished timestamp
+pub fn set_tls_finished_ts() {
+	TLS_FINISHED_TS.with(|item| *item.borrow_mut() = Some(Instant::now()))
+}
+
+/// get connection tls handshake finished timestamp
+pub fn get_tls_finished_ts() -> Option<Instant> {
+	TLS_FINISHED_TS.with(|item| item.borrow().clone())
+}
+
+/// set ws upgrade handshake finished timestamp
+pub fn set_ws_finished_ts() {
+	WS_FINISHED_TS.with(|item| *item.borrow_mut() = Some(Instant::now()))
+}
+
+/// get ws upgrade finished timestamp
+pub fn get_ws_finished_ts() -> Option<Instant> {
+	WS_FINISHED_TS.with(|item| item.borrow().clone())
+}
+
+/// set connection alpn protocol
+pub fn set_alpn_protocol(alpn_info: Option<&str>) {
+	ALPN_PROTOCOL.with(|item| *item.borrow_mut() = alpn_info.map(|item| item.to_string()));
+}
+
+/// get connection alpn protocol
+pub fn get_alpn_protocol() -> Option<String> {
+	ALPN_PROTOCOL.with(|item| item.borrow().clone())
+}
+
+/// set connection tls version
+pub fn set_tls_protocol_version(tls_version: Option<String>) {
+	TLS_PROTOCOL_VERSION.with(|item| *item.borrow_mut() = tls_version);
+}
+
+/// get connection tls version
+pub fn get_tls_protocol_version() -> Option<String> {
+	TLS_PROTOCOL_VERSION.with(|item| item.borrow().clone())
+}
+
+/// set connection tls cipher suite
+pub fn set_tls_cipher_suite(cipher_suite: Option<String>) {
+	TLS_CIPHER_SUITE.with(|item| *item.borrow_mut() = cipher_suite);
+}
+
+/// get connection tls cipher suite
+pub fn get_tls_cipher_suite() -> Option<String> {
+	TLS_CIPHER_SUITE.with(|item| item.borrow().clone())
+}
+
+task_local!(static PAIR_ADDRS: RefCell<Option<(SocketAddr, SocketAddr)>> = RefCell::new(None));
+task_local!(static USE_IP_DIRECTLY: RefCell<Option<bool>> = RefCell::new(None));
+task_local!(static CONNECTION_BEGIN_TS: RefCell<Instant> = RefCell::new(Instant::now()));
+task_local!(static DNS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
+task_local!(static TCP_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
+task_local!(static TLS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
+task_local!(static WS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
+task_local!(static ALPN_PROTOCOL: RefCell<Option<String>> = RefCell::new(None));
+task_local!(static TLS_PROTOCOL_VERSION: RefCell<Option<String>> = RefCell::new(None));
+task_local!(static TLS_CIPHER_SUITE: RefCell<Option<String>> = RefCell::new(None));
 
 /// Build clients with a builder-style API
 /// This makes it easy to create and configure a websocket
@@ -200,8 +289,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-																																																																																																																																		Some(protos) => protos.0.push(protocol.into()),
-																																																																																																																																		None => WebSocketProtocol(vec![protocol.into()])
+			Some(protos) => protos.0.push(protocol.into()),
+			None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -227,8 +316,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-																																																																																																																																		Some(protos) => protos.0.append(&mut protocols),
-																																																																																																																																		None => WebSocketProtocol(protocols)
+			Some(protos) => protos.0.append(&mut protocols),
+			None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -260,8 +349,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-																																																																																																																																		Some(protos) => protos.0.push(extension),
-																																																																																																																																		None => WebSocketExtensions(vec![extension])
+			Some(protos) => protos.0.push(extension),
+			None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -296,8 +385,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-																																																																																																																																		Some(protos) => protos.0.append(&mut extensions),
-																																																																																																																																		None => WebSocketExtensions(extensions)
+			Some(protos) => protos.0.append(&mut extensions),
+			None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -673,26 +762,41 @@ impl<'u> ClientBuilder<'u> {
 		};
 
 		// put it all together
-		let mut begin = Instant::now();
 		let future = tcp_stream
 			.and_then(move |s| {
-				let dur = begin.elapsed();
-				CONNECTION_INFOS.with(|info| {
-					let mut info_mut = info.borrow_mut();
-					info_mut.1 = Some(dur);
-				});
+				set_tcp_finished_ts();
 
-				begin = Instant::now();
-				connector.connect(host.as_ref(), s).map_err(|e| e.into())
+				if let (Ok(local_addr), Ok(peer_addr)) = (s.local_addr(), s.peer_addr()) {
+					PAIR_ADDRS.with(|item| *item.borrow_mut() = Some((peer_addr, local_addr)));
+				} else {
+					debug!(
+						"connection addrs: local_addr= {:?} peer_addr= {:?}",
+						s.local_addr(),
+						s.peer_addr()
+					);
+				}
+
+				connector
+					.connect(host.as_ref(), s)
+					.map_err(|e| e.into())
+					.inspect(|tls| {
+						set_alpn_protocol(tls.get_ref().1.get_alpn_protocol());
+						set_tls_protocol_version(
+							tls.get_ref()
+								.1
+								.get_protocol_version()
+								.map(|item| format!("{:?}", item)),
+						);
+						set_tls_cipher_suite(
+							tls.get_ref()
+								.1
+								.get_negotiated_ciphersuite()
+								.map(|item| format!("{:?}", item)),
+						);
+						set_tls_finished_ts();
+					})
 			})
-			.and_then(move |stream| {
-				let dur = begin.elapsed();
-				CONNECTION_INFOS.with(|info| {
-					let mut info_mut = info.borrow_mut();
-					info_mut.2 = Some(dur);
-				});
-				builder.async_connect_on(stream)
-			});
+			.and_then(move |stream| builder.async_connect_on(stream));
 		Box::new(future)
 	}
 
@@ -792,6 +896,10 @@ impl<'u> ClientBuilder<'u> {
 	where
 		S: stream::async::Stream + Send + 'static,
 	{
+		debug!(
+			"version: {:?} headers: {:?} version_set: {:?} key_set: {:?}",
+			self.version, self.headers, self.version_set, self.key_set
+		);
 		let mut builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
 			version: self.version,
@@ -825,6 +933,7 @@ impl<'u> ClientBuilder<'u> {
 			.map(|(message, stream)| {
 				let codec = MessageCodec::default(Context::Client);
 				let client = update_framed_codec(stream, codec);
+				set_ws_finished_ts();
 				(client, message.headers)
 			});
 
@@ -837,28 +946,29 @@ impl<'u> ClientBuilder<'u> {
 		secure: Option<bool>,
 	) -> Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send> {
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
+			set_dns_finished_ts();
+			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 			info!("connect websocket custom address: {:?}", addr);
 			return Box::new(TcpStreamNew::connect(&addr).map_err(|e| e.into()));
 		}
 
+		set_connection_begin_ts();
 		// get the address to connect to, return an error future if ther's a problem
 		let domain = self.url.host_str().unwrap_or("");
 		let address = match super::dns::try_get_custom_addr(domain) {
-			Some(addr) => addr,
+			Some(addr) => {
+				set_dns_finished_ts();
+				USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
+				addr
+			}
 			None => {
-				let begin = Instant::now();
 				match self
 					.extract_host_port(secure)
 					.and_then(|p| Ok(p.to_socket_addrs()?))
 				{
 					Ok(mut s) => match s.next() {
 						Some(a) => {
-							let dur = begin.elapsed();
-							CONNECTION_INFOS.with(|info| {
-								let mut info_mut = info.borrow_mut();
-								info_mut.0 = Some(dur);
-							});
-
+							set_dns_finished_ts();
 							super::dns::cache_addr(domain.to_string(), a.clone());
 							a
 						}
@@ -873,6 +983,7 @@ impl<'u> ClientBuilder<'u> {
 					},
 					Err(e) => match super::dns::try_get_cached_addr(domain) {
 						Some(addr) => {
+							USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 							info!(
 								"get cached websocket addr: domain= {:?} addr= {:?}",
 								domain, addr
@@ -1057,7 +1168,6 @@ impl<'u> ClientBuilder<'u> {
 				tls_config
 					.root_store
 					.add_server_trust_anchors(&::webpki_roots::TLS_SERVER_ROOTS);
-				tls_config.key_log = Arc::new(::rustls::KeyLogFile::new());
 				tls_config
 			}
 		};
