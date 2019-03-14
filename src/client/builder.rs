@@ -728,7 +728,12 @@ impl<'u> ClientBuilder<'u> {
 
 		// put it all together
 		let future = tcp_stream
-			.and_then(move |s| connector.connect(&host, s).map_err(|e| e.into()))
+			.and_then(move |s| {
+				if let Err(err) = s.set_nodelay(true) {
+					warn!("set no delay failed: {:?}", err);
+				}
+				connector.connect(&host, s).map_err(|e| e.into())
+			})
 			.and_then(move |stream| builder.async_connect_on(stream));
 		Box::new(future)
 	}
@@ -764,6 +769,9 @@ impl<'u> ClientBuilder<'u> {
 		// put it all together
 		let future = tcp_stream
 			.and_then(move |s| {
+				if let Err(err) = s.set_nodelay(true) {
+					warn!("set nodelay failed: err= {:?}", err);
+				}
 				set_tcp_finished_ts();
 
 				if let (Ok(local_addr), Ok(peer_addr)) = (s.local_addr(), s.peer_addr()) {
