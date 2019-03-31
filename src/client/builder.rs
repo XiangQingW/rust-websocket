@@ -160,9 +160,9 @@ pub fn get_tls_cipher_suite() -> Option<String> {
 }
 
 task_local!(static PAIR_ADDRS: RefCell<Option<(SocketAddr, SocketAddr)>> = RefCell::new(None));
-task_local!(static USE_IP_DIRECTLY: RefCell<Option<bool>> = RefCell::new(None));
-task_local!(static CONNECTION_BEGIN_TS: RefCell<Instant> = RefCell::new(Instant::now()));
-task_local!(static DNS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
+thread_local!(static USE_IP_DIRECTLY: RefCell<Option<bool>> = RefCell::new(None));
+thread_local!(static CONNECTION_BEGIN_TS: RefCell<Instant> = RefCell::new(Instant::now()));
+thread_local!(static DNS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
 task_local!(static TCP_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
 task_local!(static TLS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
 task_local!(static WS_FINISHED_TS: RefCell<Option<Instant>> = RefCell::new(None));
@@ -289,8 +289,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-			Some(protos) => protos.0.push(protocol.into()),
-			None => WebSocketProtocol(vec![protocol.into()])
+				Some(protos) => protos.0.push(protocol.into()),
+				None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -316,8 +316,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-			Some(protos) => protos.0.append(&mut protocols),
-			None => WebSocketProtocol(protocols)
+				Some(protos) => protos.0.append(&mut protocols),
+				None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -349,8 +349,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-			Some(protos) => protos.0.push(extension),
-			None => WebSocketExtensions(vec![extension])
+				Some(protos) => protos.0.push(extension),
+				None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -385,8 +385,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-			Some(protos) => protos.0.append(&mut extensions),
-			None => WebSocketExtensions(extensions)
+				Some(protos) => protos.0.append(&mut extensions),
+				None => WebSocketExtensions(extensions)
 		});
 		self
 	}
