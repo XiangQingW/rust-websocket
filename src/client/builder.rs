@@ -957,6 +957,8 @@ impl<'u> ClientBuilder<'u> {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 			info!("connect websocket custom address: {:?}", addr);
+
+			super::dns::set_connected_addr(addr.clone());
 			return Box::new(TcpStreamNew::connect(&addr).map_err(|e| e.into()));
 		}
 
@@ -1005,6 +1007,7 @@ impl<'u> ClientBuilder<'u> {
 		};
 		info!("connect websocket address: {:?}", address);
 
+		super::dns::set_connected_addr(address.clone());
 		// connect a tcp stream
 		Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into()))
 	}

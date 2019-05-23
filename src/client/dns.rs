@@ -17,6 +17,22 @@ lazy_static! {
 		let h = HashMap::new();
 		RwLock::new(h)
 	};
+	static ref CONNECTED_ADDR: RwLock<Option<SocketAddr>> = { RwLock::new(None) };
+}
+
+/// set connected addr
+pub fn set_connected_addr(addr: SocketAddr) {
+	if let Ok(mut a) = CONNECTED_ADDR.write() {
+		*a = Some(addr)
+	}
+}
+
+/// get connected addr
+pub fn get_connected_addr() -> Option<SocketAddr> {
+	match CONNECTED_ADDR.read() {
+		Ok(a) => a.as_ref().cloned(),
+		Err(_) => None,
+	}
 }
 
 /// add custom addr-ip setting
