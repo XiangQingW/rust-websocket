@@ -650,7 +650,7 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn async_connect(self) -> async::ClientNew<Box<stream::async::Stream + Send>> {
 		// connect to the tcp stream
-		let tcp_stream = self.async_tcpstream(None);
+		let (tcp_stream, connected_addr) = self.async_tcpstream(None);
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -663,7 +663,7 @@ impl<'u> ClientBuilder<'u> {
 		// insecure connection, connect normally
 		let future = tcp_stream.and_then(move |stream| {
 			let stream: Box<stream::async::Stream + Send> = Box::new(stream);
-			builder.async_connect_on(stream)
+			builder.async_connect_on(stream, connected_addr)
 		});
 		Box::new(future)
 	}
@@ -708,7 +708,7 @@ impl<'u> ClientBuilder<'u> {
 		ssl_config: Option<TlsConnector>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream>> {
 		// connect to the tcp stream
-		let tcp_stream = self.async_tcpstream(Some(true));
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true));
 
 		// configure the tls connection
 		let (host, connector) = {
@@ -734,7 +734,7 @@ impl<'u> ClientBuilder<'u> {
 				}
 				connector.connect(&host, s).map_err(|e| e.into())
 			})
-			.and_then(move |stream| builder.async_connect_on(stream));
+			.and_then(move |stream| builder.async_connect_on(stream, connected_addr));
 		Box::new(future)
 	}
 
@@ -745,7 +745,7 @@ impl<'u> ClientBuilder<'u> {
 		ssl_config: Option<ClientConfig>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream, ClientSession>> {
 		// connect to the tcp stream
-		let tcp_stream = self.async_tcpstream(Some(true));
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true));
 
 		// configure the tls connection
 		let (host, connector) = {
@@ -804,7 +804,7 @@ impl<'u> ClientBuilder<'u> {
 						set_tls_finished_ts();
 					})
 			})
-			.and_then(move |stream| builder.async_connect_on(stream));
+			.and_then(move |stream| builder.async_connect_on(stream, connected_addr));
 		Box::new(future)
 	}
 
@@ -842,7 +842,7 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	#[cfg(feature = "async")]
 	pub fn async_connect_insecure(self) -> async::ClientNew<async::TcpStream> {
-		let tcp_stream = self.async_tcpstream(Some(false));
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(false));
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -852,7 +852,8 @@ impl<'u> ClientBuilder<'u> {
 			key_set: self.key_set,
 		};
 
-		let future = tcp_stream.and_then(move |stream| builder.async_connect_on(stream));
+		let future =
+			tcp_stream.and_then(move |stream| builder.async_connect_on(stream, connected_addr));
 		Box::new(future)
 	}
 
@@ -891,7 +892,7 @@ impl<'u> ClientBuilder<'u> {
 	///
 	/// let client = ClientBuilder::new("wss://test.ws").unwrap()
 	///     .key(b"the sample nonce".clone())
-	///     .async_connect_on(ReadWritePair(input, output))
+	///     .async_connect_on(ReadWritePair(input, output), None)
 	///     .map(|(_, headers)| {
 	///         let proto: &WebSocketProtocol = headers.get().unwrap();
 	///         assert_eq!(proto.0.first().unwrap(), "proto-metheus")
@@ -900,7 +901,11 @@ impl<'u> ClientBuilder<'u> {
 	/// runtime.block_on(client).unwrap();
 	/// ```
 	#[cfg(feature = "async")]
-	pub fn async_connect_on<S>(self, stream: S) -> async::ClientNew<S>
+	pub fn async_connect_on<S>(
+		self,
+		stream: S,
+		connected_addr: Option<SocketAddr>,
+	) -> async::ClientNew<S>
 	where
 		S: stream::async::Stream + Send + 'static,
 	{
@@ -938,10 +943,15 @@ impl<'u> ClientBuilder<'u> {
 					.and_then(|message| builder.validate(&message).map(|()| (message, stream)))
 			})
 			// output the final client and metadata
-			.map(|(message, stream)| {
+			.map(move |(message, stream)| {
 				let codec = MessageCodec::default(Context::Client);
 				let client = update_framed_codec(stream, codec);
 				set_ws_finished_ts();
+
+				if let Some(a) = connected_addr {
+					super::dns::set_connected_addr(a);
+				}
+
 				(client, message.headers)
 			});
 
@@ -952,14 +962,19 @@ impl<'u> ClientBuilder<'u> {
 	fn async_tcpstream(
 		&self,
 		secure: Option<bool>,
-	) -> Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send> {
+	) -> (
+		Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send>,
+		Option<SocketAddr>,
+	) {
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 			info!("connect websocket custom address: {:?}", addr);
 
-			super::dns::set_connected_addr(addr.clone());
-			return Box::new(TcpStreamNew::connect(&addr).map_err(|e| e.into()));
+			return (
+				Box::new(TcpStreamNew::connect(&addr).map_err(|e| e.into())),
+				Some(addr),
+			);
 		}
 
 		set_connection_begin_ts();
@@ -983,11 +998,14 @@ impl<'u> ClientBuilder<'u> {
 							a
 						}
 						None => {
-							return Box::new(
-								Err(WebSocketError::WebSocketUrlError(
-									WSUrlErrorKind::NoHostName,
-								))
-								.into_future(),
+							return (
+								Box::new(
+									Err(WebSocketError::WebSocketUrlError(
+										WSUrlErrorKind::NoHostName,
+									))
+									.into_future(),
+								),
+								None,
 							);
 						}
 					},
@@ -1000,7 +1018,7 @@ impl<'u> ClientBuilder<'u> {
 							);
 							addr
 						}
-						None => return Box::new(Err(e).into_future()),
+						None => return (Box::new(Err(e).into_future()), None),
 					},
 				}
 			}
@@ -1009,7 +1027,10 @@ impl<'u> ClientBuilder<'u> {
 
 		super::dns::set_connected_addr(address.clone());
 		// connect a tcp stream
-		Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into()))
+		(
+			Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into())),
+			None,
+		)
 	}
 
 	#[cfg(any(feature = "sync", feature = "async"))]
