@@ -958,6 +958,56 @@ impl<'u> ClientBuilder<'u> {
 		Box::new(future)
 	}
 
+	fn async_resolve_dns(
+		&self,
+		host_and_port: url::HostAndPort<&str>,
+		domain: String,
+	) -> Box<dyn future::Future<Item = std::net::SocketAddr, Error = WebSocketError> + Send> {
+		let host_clone = host_and_port.to_owned();
+		let parse_dns_fn = move || {
+			let result = host_clone.to_socket_addrs();
+			info!("resolve dns success: r= {:?}", result);
+			result.map_err(|e| WebSocketError::IoError(e))
+		};
+
+		let domain_clone = domain.clone();
+
+		let pool = futures_cpupool::Builder::new()
+			.pool_size(1)
+			.name_prefix("websocket-dns-")
+			.create();
+
+		let f = pool
+			.spawn_fn(parse_dns_fn)
+			.and_then(move |mut s| match s.next() {
+				Some(a) => {
+					set_dns_finished_ts();
+					super::dns::cache_addr(domain, a.clone());
+					Box::new(future::ok(a))
+				}
+				None => {
+					return Box::new(future::err(WebSocketError::WebSocketUrlError(
+						WSUrlErrorKind::NoHostName,
+					)));
+				}
+			})
+			.or_else(
+				move |e| match super::dns::try_get_cached_addr(&domain_clone) {
+					Some(addr) => {
+						USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
+						info!(
+							"get cached websocket addr: domain= {:?} addr= {:?}",
+							domain_clone, addr
+						);
+						Box::new(future::ok(addr))
+					}
+					None => return Box::new(future::err(e)),
+				},
+			);
+
+		Box::new(f)
+	}
+
 	#[cfg(feature = "async")]
 	fn async_tcpstream(
 		&self,
@@ -979,58 +1029,29 @@ impl<'u> ClientBuilder<'u> {
 
 		set_connection_begin_ts();
 		// get the address to connect to, return an error future if ther's a problem
-		let domain = self.url.host_str().unwrap_or("");
-		let address = match super::dns::try_get_custom_addr(domain) {
-			Some(addr) => {
-				set_dns_finished_ts();
-				USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
-				addr
-			}
-			None => {
-				match self
-					.extract_host_port(secure)
-					.and_then(|p| Ok(p.to_socket_addrs()?))
-				{
-					Ok(mut s) => match s.next() {
-						Some(a) => {
-							set_dns_finished_ts();
-							super::dns::cache_addr(domain.to_string(), a.clone());
-							a
-						}
-						None => {
-							return (
-								Box::new(
-									Err(WebSocketError::WebSocketUrlError(
-										WSUrlErrorKind::NoHostName,
-									))
-									.into_future(),
-								),
-								None,
-							);
-						}
-					},
-					Err(e) => match super::dns::try_get_cached_addr(domain) {
-						Some(addr) => {
-							USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
-							info!(
-								"get cached websocket addr: domain= {:?} addr= {:?}",
-								domain, addr
-							);
-							addr
-						}
-						None => return (Box::new(Err(e).into_future()), None),
-					},
+		let domain = self.url.host_str().unwrap_or("").to_owned();
+		let address_fut: Box<Future<Item = SocketAddr, Error = WebSocketError> + Send> =
+			match super::dns::try_get_custom_addr(&domain) {
+				Some(addr) => {
+					set_dns_finished_ts();
+					USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
+					info!("connect websocket rerank address: {:?}", addr);
+					Box::new(future::ok(addr))
 				}
-			}
-		};
-		info!("connect websocket address: {:?}", address);
+				None => match self.extract_host_port(secure) {
+					Err(err) => Box::new(future::err(err)),
+					Ok(p) => self.async_resolve_dns(p, domain),
+				},
+			};
 
-		super::dns::set_connected_addr(address.clone());
+		let f = address_fut.and_then(|address| {
+			info!("connect websocket address: {:?}", address);
+
+			super::dns::set_connected_addr(address.clone());
+			Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into()))
+		});
 		// connect a tcp stream
-		(
-			Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into())),
-			None,
-		)
+		(Box::new(f), None)
 	}
 
 	#[cfg(any(feature = "sync", feature = "async"))]
