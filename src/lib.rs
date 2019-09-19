@@ -45,6 +45,7 @@ extern crate rand;
 extern crate sha1;
 #[cfg(feature = "async")]
 extern crate tokio;
+extern crate tokio_io;
 #[cfg(feature = "async-ssl")]
 extern crate tokio_tls;
 extern crate unicase;

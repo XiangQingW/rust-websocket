@@ -1,5 +1,6 @@
 extern crate futures;
 extern crate tokio;
+extern crate url;
 extern crate websocket;
 
 use futures::future::Future;
@@ -46,10 +47,13 @@ fn main() {
 		}
 	});
 
+	let url = url::Url::parse("http://127.0.0.1:8888").unwrap();
+
 	let runner = ClientBuilder::new(CONNECTION)
 		.unwrap()
 		.add_protocol("rust-websocket")
-		.async_connect_insecure()
+		// .async_connect_insecure(None)
+		.async_connect_insecure(Some(url))
 		.and_then(|(duplex, _)| {
 			let (sink, stream) = duplex.split();
 			stream

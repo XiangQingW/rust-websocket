@@ -22,3 +22,5 @@ pub mod async;
 
 #[cfg(feature = "sync")]
 pub mod sync;
+
+mod tunnel;

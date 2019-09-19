@@ -289,8 +289,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-				Some(protos) => protos.0.push(protocol.into()),
-				None => WebSocketProtocol(vec![protocol.into()])
+						Some(protos) => protos.0.push(protocol.into()),
+						None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -316,8 +316,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-				Some(protos) => protos.0.append(&mut protocols),
-				None => WebSocketProtocol(protocols)
+						Some(protos) => protos.0.append(&mut protocols),
+						None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -349,8 +349,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-				Some(protos) => protos.0.push(extension),
-				None => WebSocketExtensions(vec![extension])
+						Some(protos) => protos.0.push(extension),
+						None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -385,8 +385,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-				Some(protos) => protos.0.append(&mut extensions),
-				None => WebSocketExtensions(extensions)
+						Some(protos) => protos.0.append(&mut extensions),
+						None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -648,9 +648,12 @@ impl<'u> ClientBuilder<'u> {
 	/// runtime.block_on(echo_future).unwrap();
 	/// # }
 	/// ```
-	pub fn async_connect(self) -> async::ClientNew<Box<stream::async::Stream + Send>> {
+	pub fn async_connect(
+		self,
+		proxy_url: Option<Url>,
+	) -> async::ClientNew<Box<stream::async::Stream + Send>> {
 		// connect to the tcp stream
-		let (tcp_stream, connected_addr) = self.async_tcpstream(None);
+		let (tcp_stream, connected_addr) = self.async_tcpstream(None, proxy_url);
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -706,9 +709,10 @@ impl<'u> ClientBuilder<'u> {
 	pub fn async_connect_secure(
 		self,
 		ssl_config: Option<TlsConnector>,
+		proxy_url: Option<Url>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream>> {
 		// connect to the tcp stream
-		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true));
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true), proxy_url);
 
 		// configure the tls connection
 		let (host, connector) = {
@@ -743,9 +747,10 @@ impl<'u> ClientBuilder<'u> {
 	pub fn async_connect_secure(
 		self,
 		ssl_config: Option<ClientConfig>,
+		proxy_url: Option<Url>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream, ClientSession>> {
 		// connect to the tcp stream
-		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true));
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true), proxy_url);
 
 		// configure the tls connection
 		let (host, connector) = {
@@ -841,8 +846,11 @@ impl<'u> ClientBuilder<'u> {
 	/// # }
 	/// ```
 	#[cfg(feature = "async")]
-	pub fn async_connect_insecure(self) -> async::ClientNew<async::TcpStream> {
-		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(false));
+	pub fn async_connect_insecure(
+		self,
+		proxy_url: Option<Url>,
+	) -> async::ClientNew<async::TcpStream> {
+		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(false), proxy_url);
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -1012,10 +1020,43 @@ impl<'u> ClientBuilder<'u> {
 	fn async_tcpstream(
 		&self,
 		secure: Option<bool>,
+		proxy_url: Option<Url>,
 	) -> (
 		Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send>,
 		Option<SocketAddr>,
 	) {
+		if let Some(proxy_inner) = proxy_url {
+			if let (Some(host), Some(port), Some(dest_host), Some(dest_port)) = (
+				proxy_inner.host_str(),
+				proxy_inner.port(),
+				self.url.host_str().map(|s| s.to_string()),
+				self.url.port(),
+			) {
+				let address_fut: Box<Future<Item = SocketAddr, Error = WebSocketError> + Send> =
+					if let Some(socket_addr) = super::tunnel::try_parse(host, port) {
+						Box::new(future::ok(socket_addr))
+					} else {
+						let host_and_port = url::HostAndPort {
+							host: url::Host::Domain(host),
+							port: port,
+						};
+						self.async_resolve_dns(host_and_port, host.to_string())
+					};
+
+				let f = address_fut.and_then(move |address| {
+					TcpStreamNew::connect(&address)
+						.and_then(move |conn| super::tunnel::tunnel(conn, dest_host, dest_port))
+						.map_err(|e| WebSocketError::IoError(e))
+				});
+				return (Box::new(f), None);
+			} else {
+				warn!(
+					"can't get proper url info: proxy_url= {} dest_url= {}",
+					proxy_inner, self.url
+				);
+			}
+		}
+
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
