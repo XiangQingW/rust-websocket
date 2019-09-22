@@ -289,8 +289,8 @@ impl<'u> ClientBuilder<'u> {
 		P: Into<String>,
 	{
 		upsert_header!(self.headers; WebSocketProtocol; {
-						Some(protos) => protos.0.push(protocol.into()),
-						None => WebSocketProtocol(vec![protocol.into()])
+																																		Some(protos) => protos.0.push(protocol.into()),
+																																		None => WebSocketProtocol(vec![protocol.into()])
 		});
 		self
 	}
@@ -316,8 +316,8 @@ impl<'u> ClientBuilder<'u> {
 		let mut protocols: Vec<String> = protocols.into_iter().map(Into::into).collect();
 
 		upsert_header!(self.headers; WebSocketProtocol; {
-						Some(protos) => protos.0.append(&mut protocols),
-						None => WebSocketProtocol(protocols)
+																																		Some(protos) => protos.0.append(&mut protocols),
+																																		None => WebSocketProtocol(protocols)
 		});
 		self
 	}
@@ -349,8 +349,8 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn add_extension(mut self, extension: Extension) -> Self {
 		upsert_header!(self.headers; WebSocketExtensions; {
-						Some(protos) => protos.0.push(extension),
-						None => WebSocketExtensions(vec![extension])
+																																		Some(protos) => protos.0.push(extension),
+																																		None => WebSocketExtensions(vec![extension])
 		});
 		self
 	}
@@ -385,8 +385,8 @@ impl<'u> ClientBuilder<'u> {
 	{
 		let mut extensions: Vec<Extension> = extensions.into_iter().collect();
 		upsert_header!(self.headers; WebSocketExtensions; {
-						Some(protos) => protos.0.append(&mut extensions),
-						None => WebSocketExtensions(extensions)
+																																		Some(protos) => protos.0.append(&mut extensions),
+																																		None => WebSocketExtensions(extensions)
 		});
 		self
 	}
@@ -733,6 +733,7 @@ impl<'u> ClientBuilder<'u> {
 		// put it all together
 		let future = tcp_stream
 			.and_then(move |s| {
+				debug!("websocket stream peer: {:?}", s.peer_addr());
 				if let Err(err) = s.set_nodelay(true) {
 					warn!("set no delay failed: {:?}", err);
 				}
@@ -749,6 +750,7 @@ impl<'u> ClientBuilder<'u> {
 		ssl_config: Option<ClientConfig>,
 		proxy_url: Option<Url>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream, ClientSession>> {
+		debug!("websocket stream: proxy_url= {:?}", proxy_url);
 		// connect to the tcp stream
 		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true), proxy_url);
 
@@ -774,6 +776,7 @@ impl<'u> ClientBuilder<'u> {
 		// put it all together
 		let future = tcp_stream
 			.and_then(move |s| {
+				debug!("websocket stream peer: {:?}", s.peer_addr());
 				if let Err(err) = s.set_nodelay(true) {
 					warn!("set nodelay failed: err= {:?}", err);
 				}
@@ -789,6 +792,7 @@ impl<'u> ClientBuilder<'u> {
 					);
 				}
 
+				debug!("websocket host: {:?}", host);
 				connector
 					.connect(host.as_ref(), s)
 					.map_err(|e| e.into())
@@ -1030,7 +1034,7 @@ impl<'u> ClientBuilder<'u> {
 				proxy_inner.host_str(),
 				proxy_inner.port(),
 				self.url.host_str().map(|s| s.to_string()),
-				self.url.port(),
+				self.url.port_or_known_default(),
 			) {
 				let address_fut: Box<Future<Item = SocketAddr, Error = WebSocketError> + Send> =
 					if let Some(socket_addr) = super::tunnel::try_parse(host, port) {
@@ -1057,6 +1061,7 @@ impl<'u> ClientBuilder<'u> {
 			}
 		}
 
+		debug!("websocket use no proxy connection");
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
