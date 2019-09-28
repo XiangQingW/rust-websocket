@@ -1022,7 +1022,7 @@ impl<'u> ClientBuilder<'u> {
 			info!("connect websocket custom address: {:?}", addr);
 
 			return (
-				Box::new(TcpStreamNew::connect(&addr).map_err(|e| e.into())),
+                                Self::async_tcp_complex_connect(&addr),
 				Some(addr),
 			);
 		}
@@ -1048,11 +1048,61 @@ impl<'u> ClientBuilder<'u> {
 			info!("connect websocket address: {:?}", address);
 
 			super::dns::set_connected_addr(address.clone());
-			Box::new(TcpStreamNew::connect(&address).map_err(|e| e.into()))
+                          
+			Self::async_tcp_complex_connect(&address)
 		});
 		// connect a tcp stream
 		(Box::new(f), None)
 	}
+
+        fn get_complex_connect_addrs(address: std::net::SocketAddr, count: usize) -> Vec<std::net::SocketAddr> {
+            let mut addrs = Vec::new();
+            for _ in 0..count {
+                addrs.push(address.clone());
+            }
+            addrs
+        }
+
+        fn async_tcp_complex_connect(address: &std::net::SocketAddr) -> Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send> {
+            let addrs = Self::get_complex_connect_addrs(address.clone(), 1);
+
+            let mut timeout_ms = 0;
+            let mut conn_futs = Vec::new();
+
+            for addr in addrs {
+                let cur_delay_time = timeout_ms;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+
+                const INTERVAL_MS: u64 = 300;
+                timeout_ms += INTERVAL_MS;
+
+                let fut = tokio::timer::Delay::new(deadline)
+                    .or_else(|e| {
+                        use std::io;
+                        warn!("delay failed: err= {:?}", e);
+                        futures::future::err(WebSocketError::IoError(io::Error::new(io::ErrorKind::Other, e)))
+                    })
+                    .and_then(move |_| {
+                        info!("start to tcp complex connect: delay_time= {}", cur_delay_time);
+                        TcpStreamNew::connect(&addr).map_err(|e| e.into())
+                    });
+                conn_futs.push(fut);
+            }
+
+            let st = std::time::Instant::now();
+            let complex_conn = futures::future::select_ok(conn_futs).then(move |res| {
+                match res {
+                    Ok((s, _)) => {
+                        let cost_ms = st.elapsed().as_millis();
+                        info!("connect tcp success: cost_ms= {:?}", cost_ms);
+                        future::ok(s)
+                    },
+                    Err(err) => future::err(err),
+                }
+            });
+
+            Box::new(complex_conn)
+        }
 
 	#[cfg(any(feature = "sync", feature = "async"))]
 	fn build_request(&mut self) -> String {
