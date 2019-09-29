@@ -69,6 +69,12 @@ use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::time::Instant;
 
+#[cfg(feature = "async")]
+struct TcpStreamNewWithAddr {
+    stream: TcpStreamNew,
+    remote_addr: std::net::SocketAddr
+}
+
 /// get connection steps pair addrs
 pub fn get_connection_pair_addrs() -> Option<(SocketAddr, SocketAddr)> {
 	PAIR_ADDRS.with(|item| item.borrow().clone())
@@ -650,7 +656,7 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	pub fn async_connect(self) -> async::ClientNew<Box<stream::async::Stream + Send>> {
 		// connect to the tcp stream
-		let (tcp_stream, connected_addr) = self.async_tcpstream(None);
+		let tcp_stream = self.async_tcpstream(None);
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -662,8 +668,9 @@ impl<'u> ClientBuilder<'u> {
 
 		// insecure connection, connect normally
 		let future = tcp_stream.and_then(move |stream| {
-			let stream: Box<stream::async::Stream + Send> = Box::new(stream);
-			builder.async_connect_on(stream, connected_addr)
+                        let addr = stream.remote_addr;
+			let stream: Box<stream::async::Stream + Send> = Box::new(stream.stream);
+			builder.async_connect_on(stream, addr)
 		});
 		Box::new(future)
 	}
@@ -745,7 +752,7 @@ impl<'u> ClientBuilder<'u> {
 		ssl_config: Option<ClientConfig>,
 	) -> async::ClientNew<async::TlsStream<async::TcpStream, ClientSession>> {
 		// connect to the tcp stream
-		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(true));
+		let tcp_stream = self.async_tcpstream(Some(true));
 
 		// configure the tls connection
 		let (host, connector) = {
@@ -766,9 +773,16 @@ impl<'u> ClientBuilder<'u> {
 			key_set: self.key_set,
 		};
 
-		// put it all together
+                let connected_addr = std::sync::Arc::new(std::sync::RwLock::new(None));
+                let connected_addr_clone = connected_addr.clone();
+
 		let future = tcp_stream
 			.and_then(move |s| {
+                                if let Ok(mut addr) = connected_addr.write() {
+                                    *addr = Some(s.remote_addr);
+                                }
+                                let s = s.stream;
+
 				if let Err(err) = s.set_nodelay(true) {
 					warn!("set nodelay failed: err= {:?}", err);
 				}
@@ -804,7 +818,19 @@ impl<'u> ClientBuilder<'u> {
 						set_tls_finished_ts();
 					})
 			})
-			.and_then(move |stream| builder.async_connect_on(stream, connected_addr));
+		.and_then(move |stream| {
+                    let default_addr = std::net::SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(127, 0, 0, 1)), 8080);
+                    let connected_addr = match connected_addr_clone.read() {
+                        Ok(addr) => {
+                          addr.clone().unwrap_or(default_addr)
+                        },
+                        Err(e) => {
+                            warn!("read connected addr failed: {:?}", e);
+                            default_addr
+                        },
+                    };
+                    builder.async_connect_on(stream, connected_addr)
+                });
 		Box::new(future)
 	}
 
@@ -842,7 +868,7 @@ impl<'u> ClientBuilder<'u> {
 	/// ```
 	#[cfg(feature = "async")]
 	pub fn async_connect_insecure(self) -> async::ClientNew<async::TcpStream> {
-		let (tcp_stream, connected_addr) = self.async_tcpstream(Some(false));
+		let tcp_stream = self.async_tcpstream(Some(false));
 
 		let builder = ClientBuilder {
 			url: Cow::Owned(self.url.into_owned()),
@@ -853,7 +879,7 @@ impl<'u> ClientBuilder<'u> {
 		};
 
 		let future =
-			tcp_stream.and_then(move |stream| builder.async_connect_on(stream, connected_addr));
+			tcp_stream.and_then(move |stream_with_addr| builder.async_connect_on(stream_with_addr.stream, stream_with_addr.remote_addr));
 		Box::new(future)
 	}
 
@@ -904,7 +930,7 @@ impl<'u> ClientBuilder<'u> {
 	pub fn async_connect_on<S>(
 		self,
 		stream: S,
-		connected_addr: Option<SocketAddr>,
+		connected_addr: SocketAddr,
 	) -> async::ClientNew<S>
 	where
 		S: stream::async::Stream + Send + 'static,
@@ -948,9 +974,7 @@ impl<'u> ClientBuilder<'u> {
 				let client = update_framed_codec(stream, codec);
 				set_ws_finished_ts();
 
-				if let Some(a) = connected_addr {
-					super::dns::set_connected_addr(a);
-				}
+                                super::dns::set_connected_addr(connected_addr);
 
 				(client, message.headers)
 			});
@@ -1012,19 +1036,13 @@ impl<'u> ClientBuilder<'u> {
 	fn async_tcpstream(
 		&self,
 		secure: Option<bool>,
-	) -> (
-		Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send>,
-		Option<SocketAddr>,
-	) {
+	) -> Box<future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 			info!("connect websocket custom address: {:?}", addr);
 
-			return (
-                                Self::async_tcp_complex_connect(&addr),
-				Some(addr),
-			);
+			return Self::async_tcp_complex_connect(&addr);
 		}
 
 		set_connection_begin_ts();
@@ -1046,13 +1064,10 @@ impl<'u> ClientBuilder<'u> {
 
 		let f = address_fut.and_then(|address| {
 			info!("connect websocket address: {:?}", address);
-
-			super::dns::set_connected_addr(address.clone());
-                          
 			Self::async_tcp_complex_connect(&address)
 		});
 		// connect a tcp stream
-		(Box::new(f), None)
+		Box::new(f)
 	}
 
         fn get_complex_connect_addrs(address: std::net::SocketAddr, count: usize) -> Vec<std::net::SocketAddr> {
@@ -1063,8 +1078,8 @@ impl<'u> ClientBuilder<'u> {
             addrs
         }
 
-        fn async_tcp_complex_connect(address: &std::net::SocketAddr) -> Box<future::Future<Item = TcpStreamNew, Error = WebSocketError> + Send> {
-            let addrs = Self::get_complex_connect_addrs(address.clone(), 1);
+        fn async_tcp_complex_connect(address: &std::net::SocketAddr) -> Box<future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
+            let addrs = Self::get_complex_connect_addrs(address.clone(), 3);
 
             let mut timeout_ms = 0;
             let mut conn_futs = Vec::new();
@@ -1084,7 +1099,12 @@ impl<'u> ClientBuilder<'u> {
                     })
                     .and_then(move |_| {
                         info!("start to tcp complex connect: delay_time= {}", cur_delay_time);
-                        TcpStreamNew::connect(&addr).map_err(|e| e.into())
+                        TcpStreamNew::connect(&addr).map_err(|e| e.into()).map(move |s| {
+                            TcpStreamNewWithAddr {
+                                stream: s,
+                                remote_addr: addr
+                            }
+                        })
                     });
                 conn_futs.push(fut);
             }
@@ -1094,7 +1114,7 @@ impl<'u> ClientBuilder<'u> {
                 match res {
                     Ok((s, _)) => {
                         let cost_ms = st.elapsed().as_millis();
-                        info!("connect tcp success: cost_ms= {:?}", cost_ms);
+                        info!("connect tcp success: cost_ms= {:?} addr= {:?}", cost_ms, s.remote_addr);
                         future::ok(s)
                     },
                     Err(err) => future::err(err),
