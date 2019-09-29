@@ -68,6 +68,25 @@ use self::async_imports::*;
 use std::cell::RefCell;
 use std::net::SocketAddr;
 use std::time::Instant;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    static ref ENABLE_COMPLEX_CONN: std::sync::RwLock<bool> = std::sync::RwLock::new(false);
+}
+
+pub fn set_enable_complex_conn(is_enable: bool) {
+    if let Ok(mut enable) = ENABLE_COMPLEX_CONN.write() {
+        debug!("enable frontier complex conn");
+        *enable = is_enable;
+    }
+}
+
+pub fn enable_complex_conn() -> bool {
+    match ENABLE_COMPLEX_CONN.read() {
+        Ok(e) => *e,
+        Err(_) => false
+    }
+}
 
 #[cfg(feature = "async")]
 struct TcpStreamNewWithAddr {
@@ -1079,7 +1098,13 @@ impl<'u> ClientBuilder<'u> {
         }
 
         fn async_tcp_complex_connect(address: &std::net::SocketAddr) -> Box<future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
-            let addrs = Self::get_complex_connect_addrs(address.clone(), 3);
+            let count = if enable_complex_conn() {
+                3
+            } else {
+                1
+            };
+
+            let addrs = Self::get_complex_connect_addrs(address.clone(), count);
 
             let mut timeout_ms = 0;
             let mut conn_futs = Vec::new();
