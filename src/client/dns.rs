@@ -232,21 +232,24 @@ pub fn update_domain_sorted_addr_cost(domain: &str, addr: IpAddr, cost_ms: i32) 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SocketAddrWithDelayTime {
     pub addr: SocketAddr,
-    pub delay_time: i32
+    pub delay_time: i32,
+    pub is_rto: bool
 }
 
 impl SocketAddrWithDelayTime {
     fn from_sorted_addr(sorted_addr: &SortedAddr, port: u16) -> Self {
         SocketAddrWithDelayTime {
             addr: SocketAddr::new(sorted_addr.addr.clone(), port),
-            delay_time: sorted_addr.delay_time()
+            delay_time: sorted_addr.delay_time(),
+            is_rto: sorted_addr.is_rto
         }
     }
 
     fn new(addr: SocketAddr, delay_time: i32) -> Self {
         SocketAddrWithDelayTime {
             addr,
-            delay_time
+            delay_time,
+            is_rto: false
         }
     }
 }
@@ -305,7 +308,7 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
     }
 
     if !is_contain_first_addr {
-        sorted_addrs.insert(0, first_addr);
+        sorted_addrs.insert(0, first_addr.clone());
         sorted_addrs.pop();
     }
 
@@ -324,7 +327,7 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
         addr.delay_time = get_delay_time(addr.delay_time * factor, 300 * factor, 600 * factor);
     }
 
-    debug!("get sorted addrs: {:?}", sorted_addrs);
+    info!("get sorted addrs: {:?} first_addr= {:?}", sorted_addrs, first_addr);
     sorted_addrs
 }
 
