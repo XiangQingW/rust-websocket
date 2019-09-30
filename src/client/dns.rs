@@ -146,6 +146,21 @@ fn remove_old_domain_sorted_addrs(domain: &String, source: AddrSource) -> HashSe
     removed_addrs
 }
 
+fn take_sorted_addr(addrs: &mut BTreeSet<SortedAddr>, addr: &SortedAddr) -> Option<SortedAddr> {
+    let mut res = None;
+    for a in addrs.iter() {
+        if a.addr == addr.addr {
+            res = Some(a.clone());
+            break;
+        }
+    }
+
+    match res {
+        Some(r) => addrs.take(&r),
+        None => None
+    }
+}
+
 /// insert domain sorted addrs
 pub fn insert_domain_sorted_addrs(domain: String, sorted_addrs: Vec<SortedAddr>, source: AddrSource) {
     let mut old_addrs = remove_old_domain_sorted_addrs(&domain, source);
@@ -159,7 +174,7 @@ pub fn insert_domain_sorted_addrs(domain: String, sorted_addrs: Vec<SortedAddr>,
             continue;
         }
 
-        let a = match entry.take(&addr) {
+        let a = match take_sorted_addr(entry, &addr) {
             Some(mut old_entry) => {
                 old_entry.is_rto |= addr.is_rto;
                 old_entry
