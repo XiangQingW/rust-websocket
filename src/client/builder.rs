@@ -1009,7 +1009,6 @@ impl<'u> ClientBuilder<'u> {
 		let host_clone = host_and_port.to_owned();
 		let parse_dns_fn = move || {
 			let result = host_clone.to_socket_addrs();
-			info!("resolve dns success: r= {:?}", result);
 			result.map_err(|e| WebSocketError::IoError(e))
 		};
 
@@ -1022,17 +1021,30 @@ impl<'u> ClientBuilder<'u> {
 
 		let f = pool
 			.spawn_fn(parse_dns_fn)
-			.and_then(move |mut s| match s.next() {
-				Some(a) => {
-					set_dns_finished_ts();
-					super::dns::cache_addr(domain, a.clone());
-					Box::new(future::ok(a))
-				}
-				None => {
-					return Box::new(future::err(WebSocketError::WebSocketUrlError(
-						WSUrlErrorKind::NoHostName,
-					)));
-				}
+                        .and_then(move |s| {
+                            set_dns_finished_ts();
+                            let mut addr = None;
+                            let mut sorted_addrs = Vec::new();
+
+                            for a in s {
+                                super::dns::cache_addr(domain.clone(), a.clone());
+                                let sorted_addr = super::dns::SortedAddr::new(a.ip(), false, super::dns::AddrSource::LocalDNS);
+                                addr = Some(a);
+                                sorted_addrs.push(sorted_addr);
+                            }
+
+                            super::dns::insert_domain_sorted_addrs(domain.clone(), sorted_addrs, super::dns::AddrSource::LocalDNS);
+                            match addr {
+                                    Some(a) => {
+                                            info!("resolve dns success: r= {:?}", a);
+                                            Box::new(future::ok(a))
+                                    }
+                                    None => {
+                                            return Box::new(future::err(WebSocketError::WebSocketUrlError(
+                                                    WSUrlErrorKind::NoHostName,
+                                            )));
+                                    }
+                            }
 			})
 			.or_else(
 				move |e| match super::dns::try_get_cached_addr(&domain_clone) {
@@ -1055,19 +1067,19 @@ impl<'u> ClientBuilder<'u> {
 	fn async_tcpstream(
 		&self,
 		secure: Option<bool>,
-	) -> Box<future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
+	) -> Box<dyn future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
+                let domain = self.url.host_str().unwrap_or_default().to_string();
 		if let Some(addr) = super::dns::get_addrs_by_url(&self.url) {
 			set_dns_finished_ts();
 			USE_IP_DIRECTLY.with(|item| *item.borrow_mut() = Some(true));
 			info!("connect websocket custom address: {:?}", addr);
 
-			return Self::async_tcp_complex_connect(&addr);
+			return Self::async_tcp_complex_connect(domain, &addr);
 		}
 
 		set_connection_begin_ts();
 		// get the address to connect to, return an error future if ther's a problem
-		let domain = self.url.host_str().unwrap_or("").to_owned();
-		let address_fut: Box<Future<Item = SocketAddr, Error = WebSocketError> + Send> =
+		let address_fut: Box<dyn Future<Item = SocketAddr, Error = WebSocketError> + Send> =
 			match super::dns::try_get_custom_addr(&domain) {
 				Some(addr) => {
 					set_dns_finished_ts();
@@ -1077,45 +1089,28 @@ impl<'u> ClientBuilder<'u> {
 				}
 				None => match self.extract_host_port(secure) {
 					Err(err) => Box::new(future::err(err)),
-					Ok(p) => self.async_resolve_dns(p, domain),
+					Ok(p) => self.async_resolve_dns(p, domain.clone()),
 				},
 			};
 
-		let f = address_fut.and_then(|address| {
+		let f = address_fut.and_then(move |address| {
 			info!("connect websocket address: {:?}", address);
-			Self::async_tcp_complex_connect(&address)
+			Self::async_tcp_complex_connect(domain, &address)
 		});
 		// connect a tcp stream
 		Box::new(f)
 	}
 
-        fn get_complex_connect_addrs(address: std::net::SocketAddr, count: usize) -> Vec<std::net::SocketAddr> {
-            let mut addrs = Vec::new();
-            for _ in 0..count {
-                addrs.push(address.clone());
-            }
-            addrs
-        }
+        fn async_tcp_complex_connect(domain: String, address: &std::net::SocketAddr) -> Box<dyn future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
+            let addrs = super::dns::get_sorted_addrs(&domain, enable_complex_conn(), address.clone());
 
-        fn async_tcp_complex_connect(address: &std::net::SocketAddr) -> Box<future::Future<Item = TcpStreamNewWithAddr, Error = WebSocketError> + Send> {
-            let count = if enable_complex_conn() {
-                3
-            } else {
-                1
-            };
-
-            let addrs = Self::get_complex_connect_addrs(address.clone(), count);
-
-            let mut timeout_ms = 0;
             let mut conn_futs = Vec::new();
 
             for addr in addrs {
-                let cur_delay_time = timeout_ms;
-                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+                let delay_time = addr.delay_time as u64;
+                let deadline = std::time::Instant::now() + std::time::Duration::from_millis(delay_time);
 
-                const INTERVAL_MS: u64 = 300;
-                timeout_ms += INTERVAL_MS;
-
+                let domain_clone = domain.clone();
                 let fut = tokio::timer::Delay::new(deadline)
                     .or_else(|e| {
                         use std::io;
@@ -1123,11 +1118,13 @@ impl<'u> ClientBuilder<'u> {
                         futures::future::err(WebSocketError::IoError(io::Error::new(io::ErrorKind::Other, e)))
                     })
                     .and_then(move |_| {
-                        info!("start to tcp complex connect: delay_time= {}", cur_delay_time);
-                        TcpStreamNew::connect(&addr).map_err(|e| e.into()).map(move |s| {
+                        info!("start to tcp complex connect: delay_time= {}", delay_time);
+                        let st = std::time::Instant::now();
+                        TcpStreamNew::connect(&addr.addr).map_err(|e| e.into()).map(move |s| {
+                            super::dns::update_domain_sorted_addr_cost(&domain_clone, addr.addr.ip(), st.elapsed().as_millis() as i32);
                             TcpStreamNewWithAddr {
                                 stream: s,
-                                remote_addr: addr
+                                remote_addr: addr.addr
                             }
                         })
                     });
