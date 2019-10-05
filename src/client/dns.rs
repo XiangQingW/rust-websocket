@@ -251,7 +251,8 @@ pub fn update_domain_sorted_addr_cost(domain: &str, addr: IpAddr, cost_ms: i32) 
 pub struct SocketAddrWithDelayTime {
     pub addr: SocketAddr,
     pub delay_time: i32,
-    pub is_rto: bool
+    pub is_rto: bool,
+    pub source: AddrSource
 }
 
 impl SocketAddrWithDelayTime {
@@ -259,7 +260,8 @@ impl SocketAddrWithDelayTime {
         SocketAddrWithDelayTime {
             addr: SocketAddr::new(sorted_addr.addr.clone(), port),
             delay_time: sorted_addr.delay_time(),
-            is_rto: sorted_addr.is_rto
+            is_rto: sorted_addr.is_rto,
+            source: sorted_addr.source
         }
     }
 
@@ -267,7 +269,8 @@ impl SocketAddrWithDelayTime {
         SocketAddrWithDelayTime {
             addr,
             delay_time,
-            is_rto: false
+            is_rto: false,
+            source: AddrSource::LocalDNS
         }
     }
 }
@@ -312,7 +315,7 @@ pub fn get_sorted_addrs(
 
     fn has_selected(addrs: &[SocketAddrWithDelayTime], addr: &SortedAddr) -> bool {
         for a in addrs {
-            if a.addr.ip() == addr.addr {
+            if a.addr.ip() == addr.addr || a.source == addr.source {
                 return true;
             }
         }
@@ -324,7 +327,11 @@ pub fn get_sorted_addrs(
         .find(|a| !a.has_been_used() && !has_selected(&sorted_addrs, a))
     {
         Some(a) => sorted_addrs.push(SocketAddrWithDelayTime::from_sorted_addr(a, port)),
-        None => sorted_addrs.push(sorted_addrs[0].clone())
+        None => {
+            if let Some(last_addr) = addrs.iter().last() {
+                sorted_addrs.push(SocketAddrWithDelayTime::from_sorted_addr(last_addr, port));
+            }
+        }
     }
 
     let mut is_contain_first_addr = false;
