@@ -1,12 +1,13 @@
 //! Custom ip address setting
 
-use std::collections::{HashMap, BTreeSet, HashSet};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, IpAddr};
-use std::sync::RwLock;
+use std::{
+    cmp::Ordering,
+    collections::{BTreeSet, HashMap, HashSet},
+    hash::{Hash, Hasher},
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::{RwLock, RwLockReadGuard, RwLockWriteGuard}
+};
 use url::Url;
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
 
 /// ip fragment prefix
 pub const IP_FRAGMENT_PREFIX: &str = "430BB5C318_ip:";
@@ -110,19 +111,17 @@ impl Ord for SortedAddr {
 }
 
 lazy_static! {
-	static ref CUSTOM_DOMAIN2ADDR: RwLock<HashMap<String, SocketAddr>> = {
-		let h = HashMap::new();
-		RwLock::new(h)
-	};
-	static ref CACHED_DOMAIN2ADDR: RwLock<HashMap<String, SocketAddr>> = {
-		let h = HashMap::new();
-		RwLock::new(h)
-	};
-	static ref CONNECTED_ADDR: RwLock<Option<SocketAddr>> = { RwLock::new(None) };
-
-        static ref DOMAIN2SORTED_ADDRS: RwLock<HashMap<String, BTreeSet<SortedAddr>>> = {
-            RwLock::new(HashMap::new())
-        };
+    static ref CUSTOM_DOMAIN2ADDR: RwLock<HashMap<String, SocketAddr>> = {
+        let h = HashMap::new();
+        RwLock::new(h)
+    };
+    static ref CACHED_DOMAIN2ADDR: RwLock<HashMap<String, SocketAddr>> = {
+        let h = HashMap::new();
+        RwLock::new(h)
+    };
+    static ref CONNECTED_ADDR: RwLock<Option<SocketAddr>> = { RwLock::new(None) };
+    static ref DOMAIN2SORTED_ADDRS: RwLock<HashMap<String, BTreeSet<SortedAddr>>> =
+        { RwLock::new(HashMap::new()) };
 }
 
 fn remove_old_domain_sorted_addrs(domain: &String, source: AddrSource) -> HashSet<SortedAddr> {
@@ -130,7 +129,7 @@ fn remove_old_domain_sorted_addrs(domain: &String, source: AddrSource) -> HashSe
 
     let addrs = match domain2addrs.get_mut(domain) {
         Some(addrs) => addrs,
-        None => return HashSet::new(),
+        None => return HashSet::new()
     };
 
     let removed_addrs: HashSet<SortedAddr> = addrs
@@ -162,11 +161,17 @@ fn take_sorted_addr(addrs: &mut BTreeSet<SortedAddr>, addr: &SortedAddr) -> Opti
 }
 
 /// insert domain sorted addrs
-pub fn insert_domain_sorted_addrs(domain: String, sorted_addrs: Vec<SortedAddr>, source: AddrSource) {
+pub fn insert_domain_sorted_addrs(
+    domain: String,
+    sorted_addrs: Vec<SortedAddr>,
+    source: AddrSource
+) {
     let mut old_addrs = remove_old_domain_sorted_addrs(&domain, source);
 
     let mut domain2addrs = DOMAIN2SORTED_ADDRS.write_lock();
-    let entry = domain2addrs.entry(domain.clone()).or_insert_with(BTreeSet::new);
+    let entry = domain2addrs
+        .entry(domain.clone())
+        .or_insert_with(BTreeSet::new);
 
     for addr in sorted_addrs {
         if let Some(old_addr) = old_addrs.take(&addr) {
@@ -178,13 +183,16 @@ pub fn insert_domain_sorted_addrs(domain: String, sorted_addrs: Vec<SortedAddr>,
             Some(mut old_entry) => {
                 old_entry.is_rto |= addr.is_rto;
                 old_entry
-            },
-            None => addr,
+            }
+            None => addr
         };
         entry.insert(a);
     }
 
-    debug!("insert domain sorted addrs success: domain= {} entry= {:?} source= {:?}", domain, entry, source);
+    debug!(
+        "insert domain sorted addrs success: domain= {} entry= {:?} source= {:?}",
+        domain, entry, source
+    );
 }
 
 /// update domain sorted addr cost
@@ -209,14 +217,21 @@ pub fn update_domain_sorted_addr_cost(domain: &str, addr: IpAddr, cost_ms: i32) 
     let sorted_addr = match sorted_addr {
         Some(a) => a,
         None => {
-            warn!("addr not found in sorted addrs: addr= {:?} addrs= {:?}", addr, addrs);
-            return},
+            warn!(
+                "addr not found in sorted addrs: addr= {:?} addrs= {:?}",
+                addr, addrs
+            );
+            return;
+        }
     };
 
     let mut addr = match addrs.take(&sorted_addr) {
         Some(a) => a,
         None => {
-            warn!("take addr not found in sorted addrs: addr= {:?} addrs= {:?}", addr, addrs);
+            warn!(
+                "take addr not found in sorted addrs: addr= {:?} addrs= {:?}",
+                addr, addrs
+            );
             return;
         }
     };
@@ -226,7 +241,10 @@ pub fn update_domain_sorted_addr_cost(domain: &str, addr: IpAddr, cost_ms: i32) 
     }
 
     addrs.insert(addr);
-    debug!("update domain sorted addr cost success: domain= {} cost_ms= {} addrs= {:?}", domain, cost_ms, addrs);
+    debug!(
+        "update domain sorted addr cost success: domain= {} cost_ms= {} addrs= {:?}",
+        domain, cost_ms, addrs
+    );
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -255,7 +273,11 @@ impl SocketAddrWithDelayTime {
 }
 
 /// get sorted addrs
-pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketAddr) -> Vec<SocketAddrWithDelayTime> {
+pub fn get_sorted_addrs(
+    domain: &str,
+    is_complex_conn: bool,
+    first_addr: SocketAddr
+) -> Vec<SocketAddrWithDelayTime> {
     let port = first_addr.port();
     let first_addr = SocketAddrWithDelayTime::new(first_addr, 0);
     if !is_complex_conn {
@@ -266,7 +288,7 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
 
     let addrs = match domain2addrs.get(domain) {
         Some(addrs) => addrs,
-        None => return vec![first_addr],
+        None => return vec![first_addr]
     };
 
     if addrs.is_empty() {
@@ -276,7 +298,10 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
     let mut sorted_addrs = Vec::new();
 
     let fastest_addr = addrs.iter().nth(0).unwrap();
-    sorted_addrs.push(SocketAddrWithDelayTime::from_sorted_addr(fastest_addr, port));
+    sorted_addrs.push(SocketAddrWithDelayTime::from_sorted_addr(
+        fastest_addr,
+        port
+    ));
 
     if 1 < addrs.len() {
         let faster_addr = addrs.iter().nth(1).unwrap();
@@ -294,9 +319,12 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
         false
     }
 
-    match addrs.iter().find(|a| !a.has_been_used() && !has_selected(&sorted_addrs, a)) {
+    match addrs
+        .iter()
+        .find(|a| !a.has_been_used() && !has_selected(&sorted_addrs, a))
+    {
         Some(a) => sorted_addrs.push(SocketAddrWithDelayTime::from_sorted_addr(a, port)),
-        None => sorted_addrs.push(sorted_addrs[0].clone()),
+        None => sorted_addrs.push(sorted_addrs[0].clone())
     }
 
     let mut is_contain_first_addr = false;
@@ -317,113 +345,118 @@ pub fn get_sorted_addrs(domain: &str, is_complex_conn: bool, first_addr: SocketA
         std::cmp::min(max, t)
     }
 
+    let mut base_delay_time = 0;
     for (index, addr) in sorted_addrs.iter_mut().enumerate() {
+        base_delay_time = std::cmp::max(base_delay_time, addr.delay_time);
         if index == 0 {
             addr.delay_time = 0;
             continue;
         }
 
         let factor = index as i32;
-        addr.delay_time = get_delay_time(addr.delay_time * factor, 300 * factor, 600 * factor);
+        addr.delay_time = get_delay_time(base_delay_time * factor, 300 * factor, 600 * factor);
     }
 
-    info!("get sorted addrs: {:?} first_addr= {:?}", sorted_addrs, first_addr);
+    info!(
+        "get sorted addrs: {:?} first_addr= {:?}",
+        sorted_addrs, first_addr
+    );
     sorted_addrs
 }
 
 /// set connected addr
 pub fn set_connected_addr(addr: SocketAddr) {
-	if let Ok(mut a) = CONNECTED_ADDR.write() {
-		*a = Some(addr)
-	}
+    if let Ok(mut a) = CONNECTED_ADDR.write() {
+        *a = Some(addr)
+    }
 }
 
 /// get connected addr
 pub fn get_connected_addr() -> Option<SocketAddr> {
-	match CONNECTED_ADDR.read() {
-		Ok(a) => a.as_ref().cloned(),
-		Err(_) => None,
-	}
+    match CONNECTED_ADDR.read() {
+        Ok(a) => a.as_ref().cloned(),
+        Err(_) => None
+    }
 }
 
 /// add custom addr-ip setting
 pub fn set_custom_addr(domain: String, addr: &str) {
-	if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
-		if let Ok(addr) = addr.parse::<Ipv4Addr>() {
-			let addr = SocketAddrV4::new(addr, 443);
-			let addr = SocketAddr::V4(addr);
-			addrs.insert(domain, addr);
-		}
-	}
+    if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
+        if let Ok(addr) = addr.parse::<Ipv4Addr>() {
+            let addr = SocketAddrV4::new(addr, 443);
+            let addr = SocketAddr::V4(addr);
+            addrs.insert(domain, addr);
+        }
+    }
 }
 
 /// get custom addr-ip setting
 pub fn try_get_custom_addr(domain: &str) -> Option<SocketAddr> {
-	match CUSTOM_DOMAIN2ADDR.write() {
-		Ok(addrs) => {
-			let addr = addrs.get(domain).cloned();
-			addr
-		}
-		_ => None,
-	}
+    match CUSTOM_DOMAIN2ADDR.write() {
+        Ok(addrs) => {
+            let addr = addrs.get(domain).cloned();
+            addr
+        }
+        _ => None
+    }
 }
 
 /// remove custom addr-ip setting
 pub fn remove_custom_addr(domain: &str) {
-	if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
-		addrs.remove(domain);
-	}
+    if let Ok(mut addrs) = CUSTOM_DOMAIN2ADDR.write() {
+        addrs.remove(domain);
+    }
 }
 
 /// cache addr
 pub fn cache_addr(domain: String, addr: SocketAddr) {
-	if let Ok(mut addrs) = CACHED_DOMAIN2ADDR.write() {
-		debug!(
-			"cache websocket addr: domain= {:?} addr= {:?}",
-			domain, addr
-		);
-		addrs.insert(domain, addr);
-	}
+    if let Ok(mut addrs) = CACHED_DOMAIN2ADDR.write() {
+        debug!(
+            "cache websocket addr: domain= {:?} addr= {:?}",
+            domain, addr
+        );
+        addrs.insert(domain, addr);
+    }
 }
 
 /// try get cached addr
 pub fn try_get_cached_addr(domain: &str) -> Option<SocketAddr> {
-	match CACHED_DOMAIN2ADDR.write() {
-		Ok(addrs) => {
-			let addr = addrs.get(domain).cloned();
-			addr
-		}
-		_ => None,
-	}
+    match CACHED_DOMAIN2ADDR.write() {
+        Ok(addrs) => {
+            let addr = addrs.get(domain).cloned();
+            addr
+        }
+        _ => None
+    }
 }
 
 /// get addrs by url
 pub(crate) fn get_addrs_by_url(url: &Url) -> Option<SocketAddr> {
-	let fragment = url.fragment()?;
+    let fragment = url.fragment()?;
 
-	if !fragment.starts_with(IP_FRAGMENT_PREFIX) {
-		return None;
-	}
+    if !fragment.starts_with(IP_FRAGMENT_PREFIX) {
+        return None;
+    }
 
-	let elements: Vec<_> = fragment.split(':').collect();
-	let ip = elements.get(1)?;
+    let elements: Vec<_> = fragment.split(':').collect();
+    let ip = elements.get(1)?;
 
-	let port = if url.scheme() == "ws" { 80 } else { 443 };
+    let port = if url.scheme() == "ws" { 80 } else { 443 };
 
-	get_addr_by_ip(ip, port)
+    get_addr_by_ip(ip, port)
 }
 
 /// get addr by ip
 fn get_addr_by_ip(ip: &str, port: u16) -> Option<SocketAddr> {
-	match ip.parse::<Ipv4Addr>() {
-		Ok(addr) => {
-			let addr = SocketAddrV4::new(addr, port);
-			let addr = SocketAddr::V4(addr);
-			Some(addr)
-		}
-		Err(err) => {
-			warn!("get addr by ip failed: err= {:?} ip= {:?}", err, ip);
-			None
-		}
-	}
+    match ip.parse::<Ipv4Addr>() {
+        Ok(addr) => {
+            let addr = SocketAddrV4::new(addr, port);
+            let addr = SocketAddr::V4(addr);
+            Some(addr)
+        }
+        Err(err) => {
+            warn!("get addr by ip failed: err= {:?} ip= {:?}", err, ip);
+            None
+        }
+    }
 }
