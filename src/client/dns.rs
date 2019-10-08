@@ -343,7 +343,13 @@ pub fn get_sorted_addrs(
     }
 
     if !is_contain_first_addr {
-        sorted_addrs.insert(0, first_addr.clone());
+        let insert_pos = if !sorted_addrs.is_empty() && sorted_addrs[0].is_rto && 1 <= sorted_addrs.len() {
+            1
+        } else {
+            0
+        };
+
+        sorted_addrs.insert(insert_pos, first_addr.clone());
         sorted_addrs.pop();
     }
 
