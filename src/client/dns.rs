@@ -91,12 +91,12 @@ impl Ord for SortedAddr {
             return Ordering::Equal;
         }
 
-        let self_avg_cost = self.avg_cost();
-        let other_avg_cost = other.avg_cost();
+        // let self_avg_cost = self.avg_cost();
+        // let other_avg_cost = other.avg_cost();
 
-        if self_avg_cost != other_avg_cost {
-            return self_avg_cost.cmp(&other_avg_cost);
-        }
+        // if self_avg_cost != other_avg_cost {
+        //     return self_avg_cost.cmp(&other_avg_cost);
+        // }
 
         if self.is_rto != other.is_rto {
             return other.is_rto.cmp(&self.is_rto);
